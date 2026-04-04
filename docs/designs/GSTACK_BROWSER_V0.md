@@ -319,8 +319,14 @@ From DESIGN.md:
 | DMG packaging | **SHIPPED** | 189MB compressed |
 | `GSTACK_CHROMIUM_PATH` | **SHIPPED** | Custom Chromium binary support |
 | `BROWSE_EXTENSIONS_DIR` | **SHIPPED** | Extension path override |
-| Auth via `/health` | **SHIPPED** | Replaces .auth.json file approach |
+| Auth via `/health` | **SHIPPED** | Replaces .auth.json file approach, auto-refreshes on server restart |
 | Build script | **SHIPPED** | `scripts/build-app.sh` |
+| Model routing | **SHIPPED** | Sonnet for actions, Opus for analysis (`pickSidebarModel`) |
+| Debug logging | **SHIPPED** | 40+ silent catches → prefixed console logging across 4 files |
+| No idle timeout (headed) | **SHIPPED** | Browser stays alive as long as window is open |
+| Cookie import button | **SHIPPED** | One-click in sidebar footer, opens `/cookie-picker` |
+| Sidebar arrow hint | **SHIPPED** | Points to sidebar, hides only when sidebar actually opens |
+| Architecture doc | **SHIPPED** | `docs/designs/SIDEBAR_MESSAGE_FLOW.md` |
 | Command palette | Planned | Phase 1b |
 | Quick screenshot | Planned | Phase 1b |
 | Status bar | Planned | Phase 1b |

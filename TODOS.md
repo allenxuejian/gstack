@@ -199,16 +199,22 @@ Sidebar agent writes structured messages to `.context/sidebar-inbox/`. Workspace
 **Priority:** P3
 **Depends on:** Headed mode (shipped)
 
-### Sidebar agent needs Write tool + better error visibility
+### Sidebar agent needs Write tool + better error visibility — SHIPPED
 
 **What:** Two issues with the sidebar agent (`sidebar-agent.ts`): (1) `--allowedTools` is hardcoded to `Bash,Read,Glob,Grep`, missing `Write`. Claude can't create files (like CSVs) when asked. (2) When Claude errors or returns empty, the sidebar UI shows nothing, just a green dot. No error message, no "I tried but failed", nothing.
 
-**Why:** Users ask "write this to a CSV" and the sidebar silently can't. Then they think it's broken. The UI needs to surface errors visibly, and Claude needs the tools to actually do what's asked.
+**Completed:** v0.15.4.0 (2026-04-04). Write tool added to allowedTools. 40+ empty catch blocks replaced with `[gstack sidebar]`, `[gstack bg]`, `[browse]`, `[sidebar-agent]` prefixed console logging across all 4 files (sidepanel.js, background.js, server.ts, sidebar-agent.ts). Error placeholder text now shows in red. Auth token stale-refresh bug fixed.
 
-**Context:** `sidebar-agent.ts:163` hardcodes `--allowedTools`. The event relay (`handleStreamEvent`) handles `agent_done` and `agent_error` but the extension's sidepanel.js may not be rendering error states. The sidebar should show "Error: ..." or "Claude finished but produced no output" instead of staying on the green dot forever.
+### Sidebar direct API calls (eliminate claude -p startup tax)
 
-**Effort:** S (human: ~2h / CC: ~10min)
-**Priority:** P1
+**What:** Each sidebar message spawns a fresh `claude -p` process (~2-3s cold start overhead). For "click @e24" that's absurd. Direct Anthropic API calls would be sub-second.
+
+**Why:** The `claude -p` startup cost is: process spawn (~100ms) + CLI init (~500ms-1s) + API connection (~200ms) + first token. Model routing (Sonnet for actions) helps but doesn't fix the CLI overhead.
+
+**Context:** `server.ts:spawnClaude()` builds args and writes to queue file. `sidebar-agent.ts:askClaude()` spawns `claude -p`. Replace with direct `fetch('https://api.anthropic.com/...')` with tool use. Requires `ANTHROPIC_API_KEY` accessible to the browse server.
+
+**Effort:** M (human: ~1 week / CC: ~30min)
+**Priority:** P2
 **Depends on:** None
 
 ### Chrome Web Store publishing
