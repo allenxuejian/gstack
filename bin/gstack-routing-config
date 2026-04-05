@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# gstack-routing-config — read shared routing config for cross-runtime skill routing
+# Usage: gstack-routing-config [check|read]
+#
+# check: exits 0 if routing config exists, 1 if not
+# read: outputs routing rules as structured text
+#
+# Reads from ~/.gstack/routing.yaml (shared between gstack + OpenClaw).
+# Falls back to CLAUDE.md/AGENTS.md "## Skill routing" section.
+set -euo pipefail
+
+GSTACK_HOME="${GSTACK_HOME:-$HOME/.gstack}"
+ROUTING_FILE="$GSTACK_HOME/routing.yaml"
+CMD="${1:-check}"
+
+case "$CMD" in
+  check)
+    if [ -f "$ROUTING_FILE" ]; then
+      echo "ROUTING_CONFIG: $ROUTING_FILE"
+      exit 0
+    fi
+    # Fallback: check CLAUDE.md or AGENTS.md
+    for f in CLAUDE.md AGENTS.md; do
+      if [ -f "$f" ] && grep -q "## Skill routing" "$f" 2>/dev/null; then
+        echo "ROUTING_CONFIG: $f (embedded)"
+        exit 0
+      fi
+    done
+    echo "NO_ROUTING_CONFIG"
+    exit 1
+    ;;
+
+  read)
+    if [ -f "$ROUTING_FILE" ]; then
+      cat "$ROUTING_FILE"
+      exit 0
+    fi
+    # Fallback: extract routing section from CLAUDE.md or AGENTS.md
+    for f in CLAUDE.md AGENTS.md; do
+      if [ -f "$f" ] && grep -q "## Skill routing" "$f" 2>/dev/null; then
+        # Extract from "## Skill routing" to next "## " heading or EOF
+        bun -e "
+          const text = await Bun.file('$f').text();
+          const start = text.indexOf('## Skill routing');
+          if (start === -1) process.exit(1);
+          const rest = text.slice(start);
+          const end = rest.indexOf('\n## ', 1);
+          console.log(end > 0 ? rest.slice(0, end).trim() : rest.trim());
+        " 2>/dev/null || true
+        exit 0
+      fi
+    done
+    echo "NO_ROUTING_CONFIG"
+    exit 1
+    ;;
+
+  *)
+    echo "Usage: gstack-routing-config [check|read]" >&2
+    exit 1
+    ;;
+esac
