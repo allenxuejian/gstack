@@ -1914,6 +1914,98 @@ async function start() {
         return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } });
       }
 
+      // ─── Batch endpoint — N commands, 1 HTTP round-trip ─────────────
+      // Accepts both root AND scoped tokens (same as /command).
+      // Executes commands sequentially through the full security pipeline.
+      // Designed for remote agents where tunnel latency dominates.
+      if (url.pathname === '/batch' && req.method === 'POST') {
+        const tokenInfo = getTokenInfo(req);
+        if (!tokenInfo) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        resetIdleTimer();
+        const body = await req.json();
+        const { commands } = body;
+
+        if (!Array.isArray(commands) || commands.length === 0) {
+          return new Response(JSON.stringify({ error: '"commands" must be a non-empty array' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+        if (commands.length > 50) {
+          return new Response(JSON.stringify({ error: 'Max 50 commands per batch' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+          });
+        }
+
+        const startTime = Date.now();
+        emitActivity({
+          type: 'command_start',
+          command: 'batch',
+          args: [`${commands.length} commands`],
+          url: browserManager.getCurrentUrl(),
+          tabs: browserManager.getTabCount(),
+          mode: browserManager.getConnectionMode(),
+          clientId: tokenInfo?.clientId,
+        });
+
+        const results: Array<{ index: number; status: number; result: string; command: string; tabId?: number }> = [];
+        for (let i = 0; i < commands.length; i++) {
+          const cmd = commands[i];
+          if (!cmd || typeof cmd.command !== 'string') {
+            results.push({ index: i, status: 400, result: JSON.stringify({ error: 'Missing "command" field' }), command: '' });
+            continue;
+          }
+          // Reject nested batches
+          if (cmd.command === 'batch') {
+            results.push({ index: i, status: 400, result: JSON.stringify({ error: 'Nested batch commands are not allowed' }), command: 'batch' });
+            continue;
+          }
+          const cr = await handleCommandInternal(
+            { command: cmd.command, args: cmd.args, tabId: cmd.tabId },
+            tokenInfo,
+            { skipRateCheck: true, skipActivity: true },
+          );
+          results.push({
+            index: i,
+            status: cr.status,
+            result: cr.result,
+            command: cmd.command,
+            tabId: cmd.tabId,
+          });
+        }
+
+        const duration = Date.now() - startTime;
+        emitActivity({
+          type: 'command_end',
+          command: 'batch',
+          args: [`${commands.length} commands`],
+          url: browserManager.getCurrentUrl(),
+          duration,
+          status: 'ok',
+          result: `${results.filter(r => r.status === 200).length}/${commands.length} succeeded`,
+          tabs: browserManager.getTabCount(),
+          mode: browserManager.getConnectionMode(),
+          clientId: tokenInfo?.clientId,
+        });
+
+        return new Response(JSON.stringify({
+          results,
+          duration,
+          total: commands.length,
+          succeeded: results.filter(r => r.status === 200).length,
+          failed: results.filter(r => r.status !== 200).length,
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
       // ─── Command endpoint (accepts both root AND scoped tokens) ────
       // Must be checked BEFORE the blanket root-only auth gate below,
       // because scoped tokens from /connect are valid for /command.
