@@ -54,14 +54,14 @@ function flag(name: string): boolean {
 
 function parseProviders(s: string | undefined): Array<'claude' | 'gpt' | 'gemini'> {
   if (!s) return ['claude'];
-  const out: Array<'claude' | 'gpt' | 'gemini'> = [];
+  const seen = new Set<'claude' | 'gpt' | 'gemini'>();
   for (const p of s.split(',').map(x => x.trim()).filter(Boolean)) {
-    if (p === 'claude' || p === 'gpt' || p === 'gemini') out.push(p);
+    if (p === 'claude' || p === 'gpt' || p === 'gemini') seen.add(p);
     else {
       console.error(`WARN: unknown provider '${p}' — skipping. Valid: claude, gpt, gemini.`);
     }
   }
-  return out.length ? out : ['claude'];
+  return seen.size ? Array.from(seen) : ['claude'];
 }
 
 function resolvePrompt(positional: string | undefined): string {
