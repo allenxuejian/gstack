@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.19.0.0] - 2026-04-17
+## [1.2.0.0] - 2026-04-18
 
 ### Added
 
@@ -27,6 +27,77 @@
 - **Model taxonomy in neutral `scripts/models.ts`.** Avoids an import cycle through `hosts/index.ts` that would have happened if `Model` lived in `scripts/resolvers/types.ts`. `resolveModel()` handles family heuristics: `gpt-5.4-mini` → `gpt-5.4`, `o3` → `o-series`, `claude-opus-4-7` → `claude`.
 - **`scripts/resolvers/preamble/`** — 18 single-purpose generators, 16-160 lines each. The composition root in `scripts/resolvers/preamble.ts` imports them and wires them into the tier-gated section list.
 - **Plan and reviews persisted.** Implementation followed `~/.claude/plans/declarative-riding-cook.md` which went through CEO review (SCOPE EXPANSION, 6 expansions accepted), DX review (POLISH, 5 gaps fixed), Eng review (4 architecture issues), and Codex review (11 brutal findings, all integrated and 2 prior decisions reversed).
+
+## [1.1.0.0] - 2026-04-18
+
+### Added
+- **Browse can now render local HTML without an HTTP server.** Two ways: `$B goto file:///tmp/report.html` navigates to a local file (including cwd-relative `file://./x` and home-relative `file://~/x` forms, smart-parsed so you don't have to think about URL grammar), or `$B load-html /tmp/tweet.html` reads the file and loads it via `page.setContent()`. Both are scoped to cwd + temp dir for safety. If you're migrating a Puppeteer script that generates HTML in memory, this kills your Python-HTTP-server workaround.
+- **Element screenshots with an explicit flag.** `$B screenshot out.png --selector .card` is now the unambiguous way to screenshot a single element. Positional selectors still work, but tag selectors like `button` weren't recognized positionally, so the flag form fixes that. `--selector` composes with `--base64` and rejects alongside `--clip` (choose one).
+- **Retina screenshots via `--scale`.** `$B viewport 480x2000 --scale 2` sets `deviceScaleFactor: 2` and produces pixel-doubled screenshots. `$B viewport --scale 2` alone changes just the scale factor and keeps the current size. Scale is capped at 1-3 (gstack policy). Headed mode rejects the flag since scale is controlled by the real browser window.
+- **Load-HTML content survives scale changes.** Changing `--scale` rebuilds the browser context (that's how Playwright works), which previously would have wiped pages loaded via `load-html`. Now the HTML is cached in tab state and replayed into the new context automatically. In-memory only; never persisted to disk.
+- **Puppeteer → browse cheatsheet in SKILL.md.** Side-by-side table of Puppeteer APIs mapped to browse commands, plus a full worked example (tweet-renderer flow: viewport + scale + load-html + element screenshot).
+- **Guess-friendly aliases.** Type `setcontent` or `set-content` and it routes to `load-html`. Canonicalization happens before scope checks, so read-scoped tokens can't use the alias to bypass write-scope enforcement.
+- **`Did you mean ...?` on unknown commands.** `$B load-htm` returns `Unknown command: 'load-htm'. Did you mean 'load-html'?`. Levenshtein match within distance 2, gated on input length ≥ 4 so 2-letter typos don't produce noise.
+- **Rich, actionable errors on `load-html`.** Every rejection path (file not found, directory, oversize, outside safe dirs, binary content, frame context) names the input, explains the cause, and says what to do next. Extension allowlist `.html/.htm/.xhtml/.svg` + magic-byte sniff (with UTF-8 BOM strip) catches mis-renamed binaries before they render as garbage.
+
+### Security
+- `file://` navigation is now an accepted scheme in `goto`, scoped to cwd + temp dir via the existing `validateReadPath()` policy. UNC/network hosts (`file://host.example.com/...`), IP hosts, IPv6 hosts, and Windows drive-letter hosts are all rejected with explicit errors.
+- **State files can no longer smuggle HTML content.** `state load` now uses an explicit allowlist for the fields it accepts from disk — a tampered state file cannot inject `loadedHtml` to bypass the `load-html` safe-dirs, extension allowlist, magic-byte sniff, or size cap checks. Tab ownership is preserved across context recreation via the same in-memory channel, closing a cross-agent authorization gap where scoped agents could lose (or gain) tabs after `viewport --scale`.
+- **Audit log now records the raw alias input.** When you type `setcontent`, the audit entry shows `cmd: load-html, aliasOf: setcontent` so the forensic trail reflects what the agent actually sent, not just the canonical form.
+- **`load-html` content correctly clears on every real navigation** — link clicks, form submits, and JavaScript redirects now invalidate the replay metadata just like explicit `goto`/`back`/`forward`/`reload` do. Previously a later `viewport --scale` after a click could resurrect the original `load-html` content (silent data corruption). Also fixes SPA fixture URLs: `goto file:///tmp/app.html?route=home#login` preserves the query string and fragment through normalization.
+
+### For contributors
+- `validateNavigationUrl()` now returns the normalized URL (previously void). All four callers — goto, diff, newTab, restoreState — updated to consume the return value so smart-parsing takes effect at every navigation site.
+- New `normalizeFileUrl()` helper uses `fileURLToPath()` + `pathToFileURL()` from `node:url` — never string-concat — so URL escapes like `%20` decode correctly and encoded-slash traversal (`%2F..%2F`) is rejected by Node outright.
+- New `TabSession.loadedHtml` field + `setTabContent()` / `getLoadedHtml()` / `clearLoadedHtml()` methods. ASCII lifecycle diagram in the source. The `clear` call happens BEFORE navigation starts (not after) so a goto that times out post-commit doesn't leave stale metadata that could resurrect on a later context recreation.
+- `BrowserManager.setDeviceScaleFactor(scale, w, h)` is atomic: validates input, stores new values, calls `recreateContext()`, rolls back the fields on failure. `currentViewport` tracking means recreateContext preserves your size instead of hardcoding 1280×720.
+- `COMMAND_ALIASES` + `canonicalizeCommand()` + `buildUnknownCommandError()` + `NEW_IN_VERSION` are exported from `browse/src/commands.ts`. Single source of truth — both the server dispatcher and `chain` prevalidation import from the same place. Chain uses `{ rawName, name }` shape per step so audit logs preserve what the user typed while dispatch uses the canonical name.
+- `load-html` is registered in `SCOPE_WRITE` in `browse/src/token-registry.ts`.
+- Review history for the curious: 3 Codex consults (20 + 10 + 6 gaps), DX review (TTHW ~4min → <60s, Champion tier), 2 Eng review passes. Third Codex pass caught the 4-caller bug for `validateNavigationUrl` that the eng passes missed. All findings folded into the plan.
+
+## [1.0.0.0] - 2026-04-18
+
+### Added
+- **v1 prompts = simpler.** Every skill's output (tier 2 and up) explains technical terms on first use with a one-sentence gloss, frames questions in outcome terms ("what breaks for your users if..." instead of "is this endpoint idempotent?"), and keeps sentences short and direct. Good writing for everyone — not just non-technical folks. Engineers benefit too.
+- **Terse opt-out for power users.** `gstack-config set explain_level terse` switches every skill back to the older, tighter prose style — no glosses, no outcome-framing layer. Binary switch, sticks across all skills.
+- **Curated jargon list.** A repo-owned list of ~50 technical terms (idempotent, race condition, N+1, backpressure, and friends) at `scripts/jargon-list.json`. These are the terms gstack glosses. Terms not on the list are assumed plain-English enough. Add terms via PR.
+- **Real LOC receipts in the README.** Replaced the "600,000+ lines of production code" hero framing with a computed 2013-vs-2026 pro-rata multiple on logical code change, with honest caveats about public-vs-private repos. The script that computes it is at `scripts/garry-output-comparison.ts` and uses [scc](https://github.com/boyter/scc). Raw LOC is still in `/retro` output for context, just no longer the headline.
+- **Smarter `/retro` metrics.** `/retro` now leads with features shipped, commits, and PRs merged — logical SLOC added comes next, and raw LOC is demoted to context-only. Because ten lines of a good fix is not less shipping than ten thousand lines of scaffold.
+- **Upgrade prompt on first run.** When you upgrade to this version, the first skill you run will ask once whether you want to keep the new default writing style or restore V0 prose with `gstack-config set explain_level terse`. One-time, flag-file gated, never asks again.
+
+### Changed
+- **README hero reframed.** No more "10K-20K lines per day" claim. Focuses on products shipped + features + the pro-rata multiple on logical code change, which is the honest metric now that AI writes most of the code. The point isn't who typed it, it's what shipped.
+- **Hiring callout reframed.** Replaced "ship 10K+ LOC/day" with "ship real products at AI-coding speed."
+
+### For contributors
+- New `scripts/resolvers/preamble.ts` Writing Style section, injected for tier ≥ 2 skills. Composes with the existing AskUserQuestion Format section (Format = how the question is structured, Style = the prose quality of the content inside). Jargon list is baked into generated SKILL.md prose at `gen-skill-docs` time — zero runtime cost, edit the JSON and regenerate.
+- New `bin/gstack-config` validation for `explain_level` values. Unknown values print a warning and default to `default`. Annotated header documents the new key.
+- New one-shot upgrade migration at `gstack-upgrade/migrations/v1.0.0.0.sh`, matching existing `v0.15.2.0.sh` / `v0.16.2.0.sh` pattern. Flag-file gated.
+- New throughput pipeline: `scripts/garry-output-comparison.ts` (scc preflight + author-scoped SLOC across 2013 + 2026), `scripts/update-readme-throughput.ts` (reads the JSON, replaces `<!-- GSTACK-THROUGHPUT-PLACEHOLDER -->` anchor), `scripts/setup-scc.sh` (OS-detecting installer invoked only when running the throughput script — scc is not a package.json dependency).
+- Two-string marker pattern in README to prevent the pipeline from destroying its own update path: `GSTACK-THROUGHPUT-PLACEHOLDER` (stable anchor) vs `GSTACK-THROUGHPUT-PENDING` (explicit missing-build marker CI rejects).
+- V0 dormancy negative tests — the 5D psychographic dimensions (scope_appetite, risk_tolerance, detail_preference, autonomy, architecture_care) and 8 archetype names (Cathedral Builder, Ship-It Pragmatist, Deep Craft, Taste Maker, Solo Operator, Consultant, Wedge Hunter, Builder-Coach) must not appear in default-mode skill output. Keeps the V0 machinery dormant until V2.
+- **Pacing improvements ship in V1.1.** The scope originally considered (review ranking, Silent Decisions block, max-3-per-phase cap, flip mechanism) was extracted to `docs/designs/PACING_UPDATES_V0.md` after three engineering-review passes revealed structural gaps that couldn't be closed with plan-text editing. V1.1 picks it up with real V1 baseline data.
+- Design doc: `docs/designs/PLAN_TUNING_V1.md`. Full review history: CEO + Codex (×2 passes, 45 findings integrated) + DX (TRIAGE) + Eng (×3 passes — last pass drove the scope reduction).
+
+## [0.19.0.0] - 2026-04-17
+
+### Added
+- **`/plan-tune` skill — gstack can now learn which of its prompts you find valuable vs noisy.** If you keep answering the same AskUserQuestion the same way every time, this is the skill that teaches gstack to stop asking. Say "stop asking me about changelog polish" — gstack writes it down, respects it from that point forward, and one-way doors (destructive ops, architecture forks, security choices) still always ask regardless, because safety wins over preference. Plain English everywhere. No CLI subcommand syntax to memorize.
+- **Dual-track developer profile.** Tell gstack who you are as a builder (5 dimensions: scope appetite, risk tolerance, detail preference, autonomy, architecture care). gstack also silently tracks what your behavior suggests. `/plan-tune` shows both side by side plus the gap, so you can see when your actions don't match your self-description. v1 is observational — no skills change their behavior based on your profile yet. That comes in v2, once the profile has proven itself.
+- **Builder archetypes.** Run `/plan-tune vibe` (v2) or let the skill infer it from your dimensions. Eight named archetypes (Cathedral Builder, Ship-It Pragmatist, Deep Craft, Taste Maker, Solo Operator, Consultant, Wedge Hunter, Builder-Coach) plus a Polymath fallback when your dimensions don't fit a standard pattern. Codebase and model ship now; the user-facing commands are v2.
+- **Inline `tune:` feedback across every gstack skill.** When a skill asks you something, you can reply `tune: never-ask` or `tune: always-ask` or free-form English and gstack normalizes it into a preference. Only runs when you've opted in via `gstack-config set question_tuning true` — zero impact until then.
+- **Profile-poisoning defense.** Inline `tune:` writes only get accepted when the prefix came from your own chat message — never from tool output, file content, PR descriptions, or anywhere else a malicious repo might inject instructions. The binary enforces this with exit code 2 for rejected writes. This was an outside-voice catch from Codex review; it's baked in from day one.
+- **Typed question registry with CI enforcement.** 53 recurring AskUserQuestion categories across 15 skills are now declared in `scripts/question-registry.ts` with stable IDs, categories, door types (one-way vs two-way), and options. A CI test asserts the schema stays valid. Safety-critical questions (destructive ops, architecture forks) are classified `one-way` at the declaration site — never inferred from prose summaries.
+- **Unified developer profile.** The `/office-hours` skill's existing builder-profile.jsonl (sessions, signals, resources, topics) is folded into a single `~/.gstack/developer-profile.json` on first use. Migration is atomic, idempotent, and archives the source file — rerun it safely. Legacy `gstack-builder-profile` is a thin shim that delegates to the new binary.
+
+### For contributors
+- New `docs/designs/PLAN_TUNING_V0.md` captures the full design journey: every decision with pros/cons, what was deferred to v2 with explicit acceptance criteria, what was rejected after Codex review (substrate-as-prompt-convention, ±0.2 clamp, preamble LANDED detection, single event-schema), and how the final shape came together. Read this before working on v2 to understand why the constraints exist.
+- Three new binaries: `bin/gstack-question-log` (validated append to question-log.jsonl), `bin/gstack-question-preference` (explicit preference store with user-origin gate), `bin/gstack-developer-profile` (supersedes gstack-builder-profile; supports --read, --migrate, --derive, --profile, --gap, --trace, --check-mismatch, --vibe).
+- Three new preamble resolvers in `scripts/resolvers/question-tuning.ts`: question preference check (before each AskUserQuestion), question log (after), inline tune feedback with user-origin gate instructions. Consolidated into one compact `generateQuestionTuning` section for tier >= 2 skills to minimize token overhead.
+- Hand-crafted psychographic signal map (`scripts/psychographic-signals.ts`) with version hash so cached profiles recompute automatically when the map changes between gstack versions. 9 signal keys covering scope-appetite, architecture-care, test-discipline, code-quality-care, detail-preference, design-care, devex-care, distribution-care, session-mode.
+- Keyword-fallback one-way-door classifier (`scripts/one-way-doors.ts`) — secondary safety layer for ad-hoc question IDs that don't appear in the registry. Primary safety is the registry declaration.
+- 118 new tests across 4 test files: `test/plan-tune.test.ts` (47 tests — schema, helpers, safety, classifier, signal map, archetypes, preamble injection, end-to-end pipeline), `test/gstack-question-log.test.ts` (21 tests — valid payloads, rejected payloads, injection defense), `test/gstack-question-preference.test.ts` (31 tests — check/write/read/clear/stats + user-origin gate + schema validation), `test/gstack-developer-profile.test.ts` (25 tests — read/migrate/derive/trace/gap/vibe/check-mismatch). Gate-tier E2E test `skill-e2e-plan-tune.test.ts` registered (runs on `bun run test:evals`).
+- Scope rollback driven by outside-voice review. The initial CEO EXPANSION plan bundled psychographic auto-decide + blind-spot coach + LANDED celebration + full substrate wiring. Codex's 20-point critique caught that without a typed question registry, "substrate" was marketing; E1/E4/E6 formed a logical contradiction; profile poisoning was unaddressed; LANDED in the preamble injected side effects into every skill's hot path. Accepted the rollback: v1 ships the schema + observation layer, v2 adds behavior adaptation only after the foundation proves durable. All six expansions are tracked as P0 TODOs with explicit acceptance criteria.
 
 ## [0.18.4.0] - 2026-04-18
 

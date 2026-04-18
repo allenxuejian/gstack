@@ -20,6 +20,7 @@ import { generateReviewArmy } from './review-army';
 import { generateDxFramework } from './dx';
 import { generateModelOverlay } from './model-overlay';
 import { generateGBrainContextLoad, generateGBrainSaveResults } from './gbrain';
+import { generateQuestionPreferenceCheck, generateQuestionLog, generateInlineTuneFeedback } from './question-tuning';
 
 export const RESOLVERS: Record<string, ResolverFn> = {
   SLUG_EVAL: generateSlugEval,
@@ -70,4 +71,7 @@ export const RESOLVERS: Record<string, ResolverFn> = {
   BIN_DIR: (ctx) => ctx.paths.binDir,
   GBRAIN_CONTEXT_LOAD: generateGBrainContextLoad,
   GBRAIN_SAVE_RESULTS: generateGBrainSaveResults,
+  QUESTION_PREFERENCE_CHECK: generateQuestionPreferenceCheck,
+  QUESTION_LOG: generateQuestionLog,
+  INLINE_TUNE_FEEDBACK: generateInlineTuneFeedback,
 };

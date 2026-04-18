@@ -15,8 +15,10 @@
  *   2. If _TEL != "off" AND binary exists: gstack-telemetry-log for remote reporting
  */
 
+
 import type { TemplateContext } from './types';
 import { generateModelOverlay } from './model-overlay';
+import { generateQuestionTuning } from './question-tuning';
 
 // Core bootstrap
 import { generatePreambleBash } from './preamble/generate-preamble-bash';
@@ -30,6 +32,7 @@ import { generateProactivePrompt } from './preamble/generate-proactive-prompt';
 import { generateRoutingInjection } from './preamble/generate-routing-injection';
 import { generateVendoringDeprecation } from './preamble/generate-vendoring-deprecation';
 import { generateSpawnedSessionCheck } from './preamble/generate-spawned-session-check';
+import { generateWritingStyleMigration } from './preamble/generate-writing-style-migration';
 
 // Host-specific instructions
 import { generateBrainHealthInstruction } from './preamble/generate-brain-health-instruction';
@@ -40,6 +43,7 @@ import { generateVoiceDirective } from './preamble/generate-voice-directive';
 // Tier 2+ context and interaction framework
 import { generateContextRecovery } from './preamble/generate-context-recovery';
 import { generateAskUserFormat } from './preamble/generate-ask-user-format';
+import { generateWritingStyle } from './preamble/generate-writing-style';
 import { generateCompletenessSection } from './preamble/generate-completeness-section';
 import { generateConfusionProtocol } from './preamble/generate-confusion-protocol';
 import { generateContinuousCheckpoint } from './preamble/generate-continuous-checkpoint';
@@ -72,6 +76,7 @@ export function generatePreamble(ctx: TemplateContext): string {
   const sections = [
     generatePreambleBash(ctx),
     generateUpgradeCheck(ctx),
+    generateWritingStyleMigration(ctx),
     generateLakeIntro(),
     generateTelemetryPrompt(ctx),
     generateProactivePrompt(ctx),
@@ -84,10 +89,12 @@ export function generatePreamble(ctx: TemplateContext): string {
     ...(tier >= 2 ? [
       generateContextRecovery(ctx),
       generateAskUserFormat(ctx),
+      generateWritingStyle(ctx),
       generateCompletenessSection(),
       generateConfusionProtocol(),
       generateContinuousCheckpoint(),
       generateContextHealth(),
+      generateQuestionTuning(ctx),
     ] : []),
     ...(tier >= 3 ? [generateRepoModeSection(), generateSearchBeforeBuildingSection(ctx)] : []),
     generateCompletionStatus(ctx),
