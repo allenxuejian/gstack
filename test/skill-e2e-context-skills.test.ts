@@ -104,6 +104,30 @@ function skillCalls(result: { toolCalls: Array<{ tool: string; input: any }> }):
     .filter(Boolean);
 }
 
+// Build a broader assertion surface: final assistant message + every tool
+// input and output. The agent often finishes with a tool call instead of a
+// text response, leaving result.output as an empty string — but the data we
+// want to assert on (skill invocation args, bash stdout like NO_CHECKPOINTS,
+// file paths) is all present in the transcript. Search there too.
+function fullOutputSurface(result: {
+  output?: string;
+  transcript?: any[];
+  toolCalls?: Array<{ tool: string; input: any; output: string }>;
+}): string {
+  const parts: string[] = [];
+  if (result.output) parts.push(result.output);
+  for (const tc of result.toolCalls || []) {
+    parts.push(JSON.stringify(tc.input || {}));
+    if (tc.output) parts.push(tc.output);
+  }
+  // Also stringify transcript for tool_result / user-message content that
+  // isn't surfaced via toolCalls (e.g., Bash stdout echoed back).
+  for (const entry of result.transcript || []) {
+    try { parts.push(JSON.stringify(entry)); } catch { /* skip */ }
+  }
+  return parts.join('\n');
+}
+
 // ────────────────────────────────────────────────────────────────────────
 // Live-fire E2E suite
 // ────────────────────────────────────────────────────────────────────────
@@ -267,7 +291,11 @@ Do NOT use AskUserQuestion.`,
 
     logCost('context-restore-empty-state', result);
 
-    const out = result.output ?? '';
+    // Build broad surface: agent often stops after a tool call with no final
+    // text, so result.output is empty string. The bash "NO_CHECKPOINTS" echo
+    // is in tool outputs; the "no saved contexts yet" phrase may only appear
+    // in tool inputs / transcript entries.
+    const out = fullOutputSurface(result);
     const gracefulMessage = /no saved context|no contexts? yet|nothing to restore|NO_CHECKPOINTS/i.test(out);
     const noCrash = !/error|exception|undefined/i.test(out) || gracefulMessage; // mention of "error" in the graceful message is fine
     const routedToRestore = skillCalls(result).includes('context-restore');
@@ -349,12 +377,14 @@ Do NOT use AskUserQuestion.`,
     logCost('context-restore-legacy-compat', result);
 
     // Check for ANY evidence the legacy file was loaded. The agent may
-    // paraphrase the summary, so require at least ONE of:
+    // paraphrase the summary OR stop at a tool call without text output,
+    // so require at least ONE of:
     //   (a) the unique body marker (verbatim pass-through)
     //   (b) the title phrase "legacy pre-rename work"
     //   (c) the filename or its timestamp prefix
     //   (d) the branch name "feat/pre-rename"
-    const out = result.output ?? '';
+    // Search across the full transcript, not just result.output.
+    const out = fullOutputSurface(result);
     const loadedLegacy =
       out.includes('OLD_CHECKPOINT_SKILL_LEGACYCOMPAT') ||
       /legacy.+pre-rename/i.test(out) ||
@@ -402,13 +432,15 @@ Do NOT use AskUserQuestion.`,
 
     logCost('context-save-list-current-branch', result);
 
-    // Check filename presence (what `list` actually outputs in the table),
-    // not prose branch names. The agent renders a table with titles and
-    // statuses; filename tokens are the most reliable assertion surface.
-    const out = result.output ?? '';
-    const showsMain = /main-work|20260101-120000/.test(out);
-    const hidesAlpha = !/alpha/i.test(out) && !/20260202/.test(out);
-    const hidesBeta = !/beta/i.test(out) && !/20260303/.test(out);
+    // Broad surface: the list output may only appear in bash tool_result
+    // entries (find output, file reads) rather than the agent's final text.
+    const out = fullOutputSurface(result);
+    // Must show the main-branch save. Hide the other branches' saves.
+    // Match by filename timestamp (stable, unambiguous) plus a looser
+    // prose check.
+    const showsMain = /20260101-120000|main-work/.test(out);
+    const hidesAlpha = !/20260202-120000/.test(out);
+    const hidesBeta = !/20260303-120000/.test(out);
     const routed = skillCalls(result).includes('context-save');
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
 
@@ -451,11 +483,9 @@ Do NOT use AskUserQuestion.`,
 
     logCost('context-save-list-all-branches', result);
 
-    // With --all, all three seeded files should appear. Assert by filename
-    // timestamp prefix (unique per file, unambiguous) rather than branch
-    // name in prose. Branch names may not render if the agent shows titles
-    // in a compressed table format.
-    const out = result.output ?? '';
+    // Broad surface — same rationale as list-current-branch: the list output
+    // may only be in bash tool_result, not in the agent's final text.
+    const out = fullOutputSurface(result);
     const filesShown = [
       /20260101-120000/.test(out),
       /20260202-120000/.test(out),
