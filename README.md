@@ -52,21 +52,15 @@ Open Claude Code and paste this. Claude does the rest.
 
 ### Step 2: Team mode — auto-update for shared repos (recommended)
 
-Every developer installs globally, updates happen automatically:
+From inside your repo, paste this. Switches you to team mode, bootstraps the repo so teammates get gstack automatically, and commits the change:
 
 ```bash
-cd ~/.claude/skills/gstack && ./setup --team
-```
-
-Then bootstrap your repo so teammates get it:
-
-```bash
-cd <your-repo>
-~/.claude/skills/gstack/bin/gstack-team-init required  # or: optional
-git add .claude/ CLAUDE.md && git commit -m "require gstack for AI-assisted work"
+(cd ~/.claude/skills/gstack && ./setup --team) && ~/.claude/skills/gstack/bin/gstack-team-init required && git add .claude/ CLAUDE.md && git commit -m "require gstack for AI-assisted work"
 ```
 
 No vendored files in your repo, no version drift, no manual upgrades. Every Claude Code session starts with a fast auto-update check (throttled to once/hour, network-failure-safe, completely silent).
+
+Swap `required` for `optional` if you'd rather nudge teammates than block them.
 
 > **Contributing or need full history?** The commands above use `--depth 1` for a fast install. If you plan to contribute or need full git history, do a full clone instead:
 > ```bash
