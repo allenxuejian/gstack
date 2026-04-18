@@ -212,7 +212,11 @@ Do NOT use AskUserQuestion.`,
     const bothRouted = invokedSkills.includes('context-save') && invokedSkills.includes('context-restore');
     const checkpointDir = path.join(gstackHome, 'projects', slug, 'checkpoints');
     const files = fs.existsSync(checkpointDir) ? fs.readdirSync(checkpointDir).filter((f) => f.endsWith('.md')) : [];
-    const restoreMentionsTitle = (result.output ?? '').toLowerCase().includes(magicMarker.toLowerCase());
+    // Broader surface — agent may stop at restore's Skill call without
+    // echoing the marker into result.output. The marker is also in the
+    // Skill tool input (we passed it as the save title) and in the
+    // file content that restore reads.
+    const restoreMentionsTitle = fullOutputSurface(result).toLowerCase().includes(magicMarker.toLowerCase());
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
 
     recordE2E(evalCollector, 'save-then-restore round-trip', 'Context Skills E2E', result, {
@@ -254,7 +258,9 @@ Do NOT use AskUserQuestion.`,
 
     logCost('context-restore-fragment-match', result);
 
-    const out = result.output ?? '';
+    // Broader surface — agent may stop at Skill call without echoing the
+    // body marker. The payments file's body is in tool outputs (Read/Bash).
+    const out = fullOutputSurface(result);
     const loadedPayments = out.includes('FRAGMATCH_PAYMENTS_BUILD');
     const didNotLoadOthers = !out.includes('FRAGMATCH_ALPHA_BUILD') && !out.includes('FRAGMATCH_OMEGA_BUILD');
     const routedToRestore = skillCalls(result).includes('context-restore');
@@ -331,8 +337,10 @@ Do NOT use AskUserQuestion.`,
 
     logCost('context-restore-list-delegates', result);
 
-    const out = result.output ?? '';
-    // The skill should tell the user to use /context-save list instead.
+    // Broader surface — agent sometimes stops after the Skill call without
+    // producing text output. The "use /context-save list" hint may only
+    // appear in tool inputs / transcript.
+    const out = fullOutputSurface(result);
     const mentionsSaveList = /context-save list/i.test(out);
     const routedToRestore = skillCalls(result).includes('context-restore');
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
