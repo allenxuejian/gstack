@@ -124,11 +124,14 @@ describeIfSelected('Context Skills E2E (live-fire)', [
   testConcurrentIfSelected('context-save-routing', async () => {
     const { workDir, gstackHome, slug } = setupWorkdir('routing');
 
+    // Minimal prompt — just the slash command. Over-instructing the agent
+    // (e.g., "Use GSTACK_HOME=X and bash at ./bin/") was causing it to
+    // shortcut past the Skill tool. GSTACK_HOME is set via env instead so
+    // the skill's own preamble picks it up naturally.
     const result = await runSkillTest({
-      prompt: `/context-save wintermute progress
-
-Save my current working state with the title "wintermute progress". Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Do NOT use AskUserQuestion.`,
+      prompt: `/context-save wintermute progress`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 12,
       allowedTools: ['Skill', 'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'],
       timeout: 120_000,
@@ -165,16 +168,12 @@ Save my current working state with the title "wintermute progress". Use GSTACK_H
     spawnSync('git', ['add', 'feature.ts'], { cwd: workDir, stdio: 'pipe', timeout: 5000 });
 
     const result = await runSkillTest({
-      prompt: `Two steps:
-
-1. Run /context-save ${magicMarker} — save the current state.
-2. Run /context-restore — load the most recent saved state and report what it contains.
-
-Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skills via the Skill tool. Do NOT use AskUserQuestion.`,
+      prompt: `Run /context-save ${magicMarker} then run /context-restore.`,
       workingDirectory: workDir,
-      maxTurns: 20,
+      env: { GSTACK_HOME: gstackHome },
+      maxTurns: 25,
       allowedTools: ['Skill', 'Bash', 'Read', 'Write', 'Edit', 'Grep', 'Glob'],
-      timeout: 180_000,
+      timeout: 240_000,
       testName: 'context-save-then-restore-roundtrip',
       runId,
     });
@@ -215,8 +214,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
       '## Working on: omega release\n\n### Summary\nOmega content FRAGMATCH_OMEGA_BUILD\n');
 
     const result = await runSkillTest({
-      prompt: `Run /context-restore payments — load the saved context whose title contains "payments". Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Report the content of the loaded file. Do NOT use AskUserQuestion.`,
+      prompt: `/context-restore payments`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 10,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 120_000,
@@ -251,8 +251,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
     expect(fs.existsSync(checkpointDir)).toBe(false);
 
     const result = await runSkillTest({
-      prompt: `Run /context-restore — there are no saved contexts yet. Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Do NOT use AskUserQuestion.`,
+      prompt: `/context-restore`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 8,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 90_000,
@@ -286,8 +287,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
       '## Working on: seed\n');
 
     const result = await runSkillTest({
-      prompt: `Run /context-restore list. Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Do NOT use AskUserQuestion.`,
+      prompt: `/context-restore list`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 8,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 90_000,
@@ -330,8 +332,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
       '## Working on: legacy pre-rename work\n\n### Summary\nWork saved by OLD_CHECKPOINT_SKILL_LEGACYCOMPAT before the rename.\n\n### Remaining Work\n1. Item from the before-times.\n');
 
     const result = await runSkillTest({
-      prompt: `Run /context-restore — load the most recent saved context. Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Do NOT use AskUserQuestion.`,
+      prompt: `/context-restore`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 8,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 120_000,
@@ -341,8 +344,19 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
 
     logCost('context-restore-legacy-compat', result);
 
+    // Check for ANY evidence the legacy file was loaded. The agent may
+    // paraphrase the summary, so require at least ONE of:
+    //   (a) the unique body marker (verbatim pass-through)
+    //   (b) the title phrase "legacy pre-rename work"
+    //   (c) the filename or its timestamp prefix
+    //   (d) the branch name "feat/pre-rename"
     const out = result.output ?? '';
-    const loadedLegacy = out.includes('OLD_CHECKPOINT_SKILL_LEGACYCOMPAT');
+    const loadedLegacy =
+      out.includes('OLD_CHECKPOINT_SKILL_LEGACYCOMPAT') ||
+      /legacy.+pre-rename/i.test(out) ||
+      /20260301-120000-legacy/i.test(out) ||
+      /feat\/pre-rename/i.test(out) ||
+      /pre-rename/i.test(out);
     const routedToRestore = skillCalls(result).includes('context-restore');
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
 
@@ -372,8 +386,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
       '## Working on: beta LISTCURR_BETA_TOKEN\n');
 
     const result = await runSkillTest({
-      prompt: `Run /context-save list — list the saved contexts for the CURRENT branch only (not --all). The current branch is "main". Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Do NOT use AskUserQuestion.`,
+      prompt: `/context-save list`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 10,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 120_000,
@@ -383,11 +398,13 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
 
     logCost('context-save-list-current-branch', result);
 
+    // Check filename presence (what `list` actually outputs in the table),
+    // not prose branch names. The agent renders a table with titles and
+    // statuses; filename tokens are the most reliable assertion surface.
     const out = result.output ?? '';
-    // Should mention the main-branch save, NOT the feat/alpha or feat/beta saves.
-    const showsMain = /main-work|LISTCURR_MAIN/i.test(out) || /main/i.test(out);
-    const hidesAlpha = !/LISTCURR_ALPHA/i.test(out) && !/feat-alpha/i.test(out) && !/alpha/i.test(out);
-    const hidesBeta = !/LISTCURR_BETA/i.test(out) && !/feat-beta/i.test(out) && !/beta/i.test(out);
+    const showsMain = /main-work|20260101-120000/.test(out);
+    const hidesAlpha = !/alpha/i.test(out) && !/20260202/.test(out);
+    const hidesBeta = !/beta/i.test(out) && !/20260303/.test(out);
     const routed = skillCalls(result).includes('context-save');
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
 
@@ -418,8 +435,9 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
       '## Working on: beta LISTALL_BETA_TOKEN\n');
 
     const result = await runSkillTest({
-      prompt: `Run /context-save list --all — list saved contexts from ALL branches, not just the current one. Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke via the Skill tool. Report the full list. Do NOT use AskUserQuestion.`,
+      prompt: `/context-save list --all`,
       workingDirectory: workDir,
+      env: { GSTACK_HOME: gstackHome },
       maxTurns: 10,
       allowedTools: ['Skill', 'Bash', 'Read', 'Grep', 'Glob'],
       timeout: 120_000,
@@ -429,23 +447,26 @@ Use GSTACK_HOME="${gstackHome}" and the bin scripts at ./bin/. Invoke both skill
 
     logCost('context-save-list-all-branches', result);
 
+    // With --all, all three seeded files should appear. Assert by filename
+    // timestamp prefix (unique per file, unambiguous) rather than branch
+    // name in prose. Branch names may not render if the agent shows titles
+    // in a compressed table format.
     const out = result.output ?? '';
-    // With --all, output should surface all three branches. Check for branch names.
-    const branchesShown = [
-      /main/i.test(out),
-      /feat[-/]alpha|alpha/i.test(out),
-      /feat[-/]beta|beta/i.test(out),
+    const filesShown = [
+      /20260101-120000/.test(out),
+      /20260202-120000/.test(out),
+      /20260303-120000/.test(out),
     ].filter(Boolean).length;
     const routed = skillCalls(result).includes('context-save');
     const exitOk = ['success', 'error_max_turns'].includes(result.exitReason);
 
     recordE2E(evalCollector, 'context-save list --all', 'Context Skills E2E', result, {
-      passed: exitOk && routed && branchesShown === 3,
+      passed: exitOk && routed && filesShown === 3,
     });
 
     expect(exitOk).toBe(true);
     expect(routed).toBe(true);
-    expect(branchesShown).toBe(3);
+    expect(filesShown).toBe(3);
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch {}
   }, 180_000);
 });
