@@ -2,6 +2,32 @@
 
 ## [1.3.0.0] - 2026-04-19
 
+## **Every new CLI wired to a slash command.**
+## **Zero orphan binaries ship in v1.3.**
+
+v1.3 ships three new binaries (`gstack-model-benchmark`, `gstack-publish`, `gstack-taste-update`), one new skill (`/benchmark-models`), and a `/ship` Step 19.5 that detects methodology-skill changes and offers to publish them. The delta from v1.2 isn't just "more features." It's that every new primitive is discoverable from a `/command`, not buried in a CHANGELOG bullet nobody reads. Before this cut, `gstack-model-benchmark` and `gstack-publish` existed but no skill called them, so most users would never find them. Now `/benchmark-models` walks you through a cross-model comparison, and `/ship` asks about publishing the moment you touch a methodology skill. First multi-provider benchmark in any agent framework, and it's one slash command away.
+
+### The numbers that matter
+
+Headline from this branch's review audit against `origin/main` (32 commits, commit `09466734`). Reproducible: `git log origin/main..HEAD --oneline` for the commit set, `bun test test/taste-engine.test.ts test/publish-dry-run.test.ts test/benchmark-cli.test.ts test/skill-e2e-benchmark-providers.test.ts` for the test count, `grep -rn "gstack-model-benchmark\|gstack-publish\|gstack-taste-update" --include="*.tmpl"` for wiring status.
+
+| Metric                                           | BEFORE (initial v1.2 scope) | AFTER (v1.3)         | Δ           |
+|--------------------------------------------------|------------------------------|----------------------|-------------|
+| **New CLIs wired to a /skill**                   | 1 of 3 (33%)                 | **3 of 3 (100%)**    | **+2**      |
+| **Deterministic tests for v1.3 CLIs**            | 0                            | **45**               | **+45**     |
+| **Live-API adapter E2E (gated on `EVALS=1`)**    | 0                            | **8**                | **+8**      |
+| **Real adapter bugs caught by new tests**        | 0                            | **1** (codex `--skip-git-repo-check`) | **+1**      |
+| **Preamble composition root**                    | 740 lines                    | **~100 lines**       | **-86%**    |
+| **Models benchmarkable in one command**          | 1 (Claude only)              | **3** (Claude, GPT, Gemini) | **+2** |
+
+The single most striking number: the new E2E suite caught a real codex adapter bug (`--skip-git-repo-check` missing) on its first run. That bug would have shipped silently, then surfaced later as a cryptic "Not inside a trusted directory" error to anyone running `gstack-model-benchmark` from a temp dir. One test, one regression caught, before a user ever hit it.
+
+### What this means for gstack users
+
+If you're a YC founder or solo builder shipping methodology skills from one laptop, `/benchmark-models` answers "is my skill better on Opus, GPT-5.4, or Gemini" with a real benchmark table, not vibes. When you tweak `/office-hours` or `/plan-ceo-review` on a feature branch, `/ship` asks whether to push to ClawHub + SkillsMP + Vercel Skills.sh too, so methodology updates don't die on your main branch. Continuous checkpoint mode (opt-in, local by default) means you can close your laptop mid-refactor and `/context-restore` picks you up from a WIP commit with decisions and remaining work intact, not a stale notes file. Run `/gstack-upgrade` and try `/benchmark-models` on the skill you use most this week.
+
+### Itemized changes
+
 ### Added
 
 - **Per-model behavioral overlays via `--model` flag.** Different LLMs need different nudges. Run `bun run gen:skill-docs --model gpt-5.4` and every generated skill picks up GPT-tuned behavioral patches. Five overlays ship in `model-overlays/`: claude (todo discipline), gpt (anti-termination), gpt-5.4 (anti-verbosity, inherits gpt), gemini (conciseness), o-series (structured output). Overlay files are plain markdown — edit in place, no code changes. `MODEL_OVERLAY: {model}` line in the preamble output tells you which one is active. Defaults to claude. Missing overlay file → empty string (graceful), no error.
