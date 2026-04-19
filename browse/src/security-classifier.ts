@@ -157,6 +157,17 @@ export function loadTestsavant(onProgress?: (msg: string) => void): Promise<void
         'testsavant-small',
         { dtype: 'fp32' },
       );
+      // TestSavantAI's tokenizer_config.json ships with model_max_length
+      // set to a huge placeholder (1e18) which disables automatic truncation
+      // in the TextClassificationPipeline. The underlying BERT-small has
+      // max_position_embeddings: 512 — passing anything longer throws a
+      // broadcast error. Override via _tokenizerConfig (the internal source
+      // the computed model_max_length getter reads from) so the pipeline's
+      // implicit truncation: true actually kicks in.
+      const tok = testsavantClassifier?.tokenizer as any;
+      if (tok?._tokenizerConfig) {
+        tok._tokenizerConfig.model_max_length = 512;
+      }
       testsavantState = 'loaded';
     } catch (err: any) {
       testsavantState = 'failed';
@@ -179,6 +190,28 @@ export function loadTestsavant(onProgress?: (msg: string) => void): Promise<void
  * label is 'SAFE', we return confidence=0 to the combiner. When label is
  * 'INJECTION', we return the score directly.
  */
+/**
+ * Strip HTML tags and collapse whitespace. TestSavantAI was trained on
+ * plain text, not markup — feeding it raw HTML massively reduces recall
+ * because all the tag noise dilutes the injection signal. Callers that
+ * already have plain text (page snapshot innerText, tool output strings)
+ * get no-op behavior; callers with HTML get the markup stripped.
+ */
+function htmlToPlainText(input: string): string {
+  // Fast path: if no angle brackets, it's already plain text.
+  if (!input.includes('<')) return input;
+  return input
+    .replace(/<(script|style)[^>]*>[\s\S]*?<\/\1>/gi, ' ') // drop script/style bodies entirely
+    .replace(/<[^>]+>/g, ' ')                               // drop tags
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export async function scanPageContent(text: string): Promise<LayerSignal> {
   if (!text || text.length === 0) {
     return { layer: 'testsavant_content', confidence: 0 };
@@ -187,10 +220,16 @@ export async function scanPageContent(text: string): Promise<LayerSignal> {
     return { layer: 'testsavant_content', confidence: 0, meta: { degraded: true } };
   }
   try {
-    // Classify only the first 512 tokens worth of text (~2000 chars).
-    // Longer inputs get truncated by the tokenizer anyway, but explicit
-    // slicing avoids token-overflow warnings.
-    const input = text.slice(0, 2000);
+    // Normalize to plain text first — the classifier is trained on natural
+    // language, not HTML markup. A page with an injection buried in tag
+    // soup won't fire until we strip the noise.
+    const plain = htmlToPlainText(text);
+    // Character-level cap to avoid pathological memory use. The pipeline
+    // applies tokenizer truncation at 512 tokens (the BERT-small context
+    // limit — enforced via the model_max_length override in loadTestsavant)
+    // so the 4000-char cap is just a cheap upper bound. Real-world
+    // injection signals land in the first few hundred tokens anyway.
+    const input = plain.slice(0, 4000);
     const raw = await testsavantClassifier(input);
     const top = Array.isArray(raw) ? raw[0] : raw;
     const label = top?.label ?? 'SAFE';
