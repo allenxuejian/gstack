@@ -42,6 +42,7 @@ export type Verdict = 'safe' | 'log_only' | 'warn' | 'block';
 
 export type LayerName =
   | 'testsavant_content'
+  | 'deberta_content'        // opt-in ensemble layer (GSTACK_SECURITY_ENSEMBLE=deberta)
   | 'transcript_classifier'
   | 'aria_regex'
   | 'canary';
@@ -88,6 +89,7 @@ export function combineVerdict(signals: LayerSignal[]): SecurityResult {
     byLayer[s.layer] = Math.max(byLayer[s.layer] ?? 0, s.confidence);
   }
   const content = byLayer.testsavant_content ?? 0;
+  const deberta = byLayer.deberta_content ?? 0;
   const transcript = byLayer.transcript_classifier ?? 0;
   const canary = byLayer.canary ?? 0;
 
@@ -101,44 +103,53 @@ export function combineVerdict(signals: LayerSignal[]): SecurityResult {
     };
   }
 
-  // Ensemble: both ML classifiers agree -> BLOCK.
-  if (content >= THRESHOLDS.WARN && transcript >= THRESHOLDS.WARN) {
+  // ML signals at >= WARN. Count how many agree.
+  const mlHighSignals = [content, deberta, transcript].filter(c => c >= THRESHOLDS.WARN);
+  const hasDebertaSignal = deberta > 0;
+
+  // Ensemble rule:
+  //   * 2-of-3 ML classifiers >= WARN → BLOCK when DeBERTa is in the pool
+  //   * 2-of-2 (content + transcript) >= WARN → BLOCK when DeBERTa disabled
+  // In both cases, cross-model agreement is what upgrades from WARN to BLOCK.
+  const requiredForBlock = hasDebertaSignal ? 2 : 2;
+  if (mlHighSignals.length >= requiredForBlock) {
     return {
       verdict: 'block',
       reason: 'ensemble_agreement',
       signals,
-      confidence: Math.min(content, transcript),
+      confidence: Math.min(...mlHighSignals),
     };
   }
 
   // Single layer >= BLOCK (no cross-confirm) degrades to WARN to avoid FPs.
-  if (content >= THRESHOLDS.BLOCK || transcript >= THRESHOLDS.BLOCK) {
+  const maxMl = Math.max(content, deberta, transcript);
+  if (maxMl >= THRESHOLDS.BLOCK) {
     return {
       verdict: 'warn',
       reason: 'single_layer_high',
       signals,
-      confidence: Math.max(content, transcript),
+      confidence: maxMl,
     };
   }
 
-  if (content >= THRESHOLDS.WARN || transcript >= THRESHOLDS.WARN) {
+  if (maxMl >= THRESHOLDS.WARN) {
     return {
       verdict: 'warn',
       reason: 'single_layer_medium',
       signals,
-      confidence: Math.max(content, transcript),
+      confidence: maxMl,
     };
   }
 
-  if (content >= THRESHOLDS.LOG_ONLY || transcript >= THRESHOLDS.LOG_ONLY) {
+  if (maxMl >= THRESHOLDS.LOG_ONLY) {
     return {
       verdict: 'log_only',
       signals,
-      confidence: Math.max(content, transcript),
+      confidence: maxMl,
     };
   }
 
-  return { verdict: 'safe', signals, confidence: Math.max(content, transcript) };
+  return { verdict: 'safe', signals, confidence: maxMl };
 }
 
 // ─── Canary (session-scoped secret token) ────────────────────
