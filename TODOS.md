@@ -234,27 +234,12 @@ per-layer detail.
 Known v1 limitation logged as follow-up: shield only updates at connect —
 see "Shield icon continuous polling" above.
 
-#### Shield icon continuous polling (P2)
+#### ~~Shield icon continuous polling (P2)~~ — SHIPPED
 
-**What:** Extend the sidepanel's `/sidebar-chat` polling loop to refresh the
-`security` field so the shield icon reflects classifier warmup completion
-in real-time. Currently the shield only updates at connection bootstrap —
-if ML classifier warmup finishes 30s later (first run downloads 112MB), the
-user has to reload the sidepanel to see the state flip from amber to green.
-
-**Why:** First-run UX. The shield is a trust signal — stale data undermines
-it. User thinks "classifier never came up" when it actually warmed 45s ago.
-
-**Context:** `server.ts`'s `/health` endpoint already returns `security: getStatus()`.
-Two implementation options:
-  1. Add `security` to the `/sidebar-chat` response (piggyback on the 300ms poll)
-  2. Separate 10s poll of `/health` just for shield state
-Option 1 is simpler (no new endpoint hits). Option 2 isolates concerns. Pick
-after real-world usage tells us if 300ms is too fast or 10s is too slow.
-
-**Effort:** S (human: ~2h / CC: ~20min)
-**Priority:** P2
-**Depends on:** v1 shipped
+Commit 06002a82: `/sidebar-chat` response now includes `security:
+getSecurityStatus()`, and sidepanel.js calls `updateSecurityShield(data.security)`
+on every poll tick. Shield flips to 'protected' as soon as classifier warmup
+completes (typically ~30s after initial connect on first run), no reload needed.
 
 #### ~~Attack telemetry via gstack-telemetry-log (P1)~~ — SHIPPED
 
@@ -280,32 +265,27 @@ Smoke-200 is a sample; full coverage catches the long tail. Run time ~5min herme
 **Priority:** P2
 **Depends on:** v1 shipped + ~2 weeks real data
 
-#### Cross-user aggregate attack dashboard at gstack.gg/dashboard/security (P2)
+#### ~~Cross-user aggregate attack dashboard (P2)~~ — CLI SHIPPED, web UI remains
 
-**What:** Read path + UI for the attack_attempt telemetry that arrives at Supabase from
-E6. Queries: per-domain hit counts, layer distribution, FP candidates (WARN that users
-dismissed vs BLOCK that terminated).
+CLI dashboard shipped in commits a5588ec0 (schema migration) + 2d107978
+(community-pulse edge function security aggregation) + 756875a7 (bin/gstack-
+security-dashboard). Users can now run `gstack-security-dashboard` to see
+attacks last 7 days, top attacked domains, detection-layer distribution,
+and verdict counts — all aggregated from the Supabase community-pulse pipe.
 
-**Why:** Turns every gstack user into a sensor. We see what's being tried in the wild,
-prioritize fixes based on real prevalence.
+Web UI at gstack.gg/dashboard/security is still open — that's a separate
+webapp project outside this repo's scope.
 
-**Effort:** L (human: ~2w / CC: ~4h)
-**Priority:** P2
-**Depends on:** Attack telemetry follow-up landed
+#### TestSavantAI ensemble → DeBERTa-v3 ensemble (P2) — SHIPPED (opt-in)
 
-#### TestSavantAI ensemble → consider adding DeBERTa-v3 as third signal (P2)
+Commits b4e49d08 + 8e9ec52d + 4e051603 + 7a815fa7: DeBERTa-v3-base-injection-onnx
+is now wired as an opt-in L4c ensemble classifier. Enable via
+`GSTACK_SECURITY_ENSEMBLE=deberta` — sidebar-agent warmup downloads the 721MB
+model to ~/.gstack/models/deberta-v3-injection/ on first run. combineVerdict
+becomes a 2-of-3 agreement rule (testsavant + deberta + transcript) when
+enabled. Default behavior unchanged (2-of-2 testsavant + transcript).
 
-**What:** Add ProtectAI DeBERTa-v3-base-prompt-injection-v2 ONNX as a third classifier. Run
-in parallel with TestSavantAI and Haiku. Ensemble vote = BLOCK only if 2-of-3 agree.
-
-**Why:** Defense-in-depth per Perplexity/HiddenLayer/Anthropic consensus. TestSavantAI alone
-handled the benign corpus well but industry guidance still says no single classifier is
-sufficient. DeBERTa is 170MB / ~5ms native. Revisit after attack-log data tells us what
-TestSavantAI misses.
-
-**Effort:** M (human: ~1w / CC: ~2h)
-**Priority:** P2
-**Depends on:** Attack telemetry data from v1
+#### ~~TestSavantAI + DeBERTa-v3 ensemble~~ — SHIPPED opt-in (see entry above)
 
 #### Read/Glob/Grep tool-output injection coverage (P2)
 
@@ -320,36 +300,40 @@ envelope wrapping doesn't fire on non-browse-output paths.
 **Effort:** M (human: ~1w / CC: ~2h)
 **Priority:** P2
 
-#### Adversarial + integration + smoke-bench test suites (P1)
+#### ~~Adversarial + integration + smoke-bench test suites (P1)~~ — SHIPPED
 
-**What:**
-- `browse/test/security-adversarial.test.ts`: base64-decoded injection, URL-encoded,
-  zero-width character, unicode homoglyph evasion patterns
-- `browse/test/security-integration.test.ts`: 4 isolated fixtures + 1 combined, asserts
-  each content-security.ts and security.ts layer fires independently (E5 from ceo-plan)
-- `browse/test/security-bench.test.ts`: BrowseSafe-Bench smoke-200 hermetic harness
-- `browse/test/security-benign-corpus.test.ts`: 50 real-page HTML fixtures, assert 0% FP
-  at BLOCK threshold (calibration gate)
+Four test files shipped this round:
+  * `browse/test/security-adversarial.test.ts` (94a83c50) — 23 canary-channel
+    + verdict-combiner attack-shape tests
+  * `browse/test/security-integration.test.ts` (07745e04) — 10 layer-coexistence
+    + defense-in-depth regression guards
+  * `browse/test/security-live-playwright.test.ts` (b9677519) — 7 live-Chromium
+    fixture tests (5 deterministic + 2 ML, skipped if model cache absent)
+  * `browse/test/security-bench.test.ts` (afc6661f) — BrowseSafe-Bench 200-case
+    smoke harness with hermetic dataset cache + v1 baseline metrics
 
-**Why:** v1 shipped with unit tests only. The adversarial and integration suites are the
-"defense-in-depth contract" pin that the CEO review identified as critical.
+#### Bun-native 5ms inference (P3 research) — SKELETON SHIPPED, forward pass open
 
-**Effort:** M (human: ~3d / CC: ~2h)
-**Priority:** P1
-**Depends on:** v1 shipped
+Research skeleton landed this round (browse/src/security-bunnative.ts,
+docs/designs/BUN_NATIVE_INFERENCE.md, browse/test/security-bunnative.test.ts):
 
-#### Bun-native 5ms DeBERTa inference (P3 research)
+  * Pure-TS WordPiece tokenizer — reads HF tokenizer.json directly, matches
+    transformers.js output on fixture strings (correctness-tested in CI)
+  * Stable `classify()` API that current callers can wire against today
+  * Benchmark harness with p50/p95/p99 reporting — anchors v1 WASM baseline
+    for future regressions
 
-**What:** Port the DeBERTa tokenizer + ONNX inference to pure Bun/TypeScript using Bun's
-native SIMD, or use Bun FFI + Apple Accelerate for matmul. Target: ~5ms inference, works
-in compiled Bun binary (solves the onnxruntime-node limitation).
+Design doc captures the roadmap:
+  * Approach A: pure-TS + Float32Array SIMD — ruled out (can't beat WASM)
+  * Approach B: Bun FFI + Apple Accelerate cblas_sgemm — target ~3-6ms p50,
+    macOS-only, ~1000 LOC
+  * Approach C: Bun WebGPU — unexplored, worth a spike
 
-**Why:** Only worth it once we scan every tool output, not just user input + snapshots.
-See design doc §"The Ambitious Vision" — this would make gstack the only open source tool
-with native-speed prompt injection detection in a compiled binary.
-
-**Effort:** XL (human: ~2mo / CC: ~1-2w)
-**Priority:** P3 / research
+Remaining work (XL, multi-week):
+  * FFI proof-of-concept for cblas_sgemm
+  * Single transformer layer implementation + correctness check vs onnxruntime
+  * Full forward pass + weight loader + correctness regression fixtures
+  * Production swap in security-bunnative.ts `classify()` body
 
 ## Builder Ethos
 
