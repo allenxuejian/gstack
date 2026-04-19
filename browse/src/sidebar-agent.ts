@@ -367,6 +367,7 @@ async function handleStreamEvent(event: any, tabId?: number, canaryCtx?: CanaryC
           // fires, onToolResultBlock handles kill + emit.
           toolResultScanCtx.scan(toolName, text).catch(() => {});
         }
+        if (block.tool_use_id) toolUseRegistry.delete(block.tool_use_id);
       }
     }
   }
