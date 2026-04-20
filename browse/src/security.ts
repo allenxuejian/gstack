@@ -83,7 +83,17 @@ export interface StatusDetail {
  * Canary leak (confidence >= 1.0 on 'canary' layer) always BLOCKs — it's
  * deterministic, not a confidence signal.
  */
-export function combineVerdict(signals: LayerSignal[]): SecurityResult {
+export interface CombineVerdictOpts {
+  /**
+   * When true, a single ML classifier at >= BLOCK threshold blocks even if
+   * no other classifier confirms. Used for tool-output scans where the
+   * content was not authored by the user, so the Stack-Overflow-FP risk
+   * that motivated the 2-of-N rule for user input doesn't apply.
+   */
+  toolOutput?: boolean;
+}
+
+export function combineVerdict(signals: LayerSignal[], opts: CombineVerdictOpts = {}): SecurityResult {
   const byLayer: Record<string, number> = {};
   for (const s of signals) {
     byLayer[s.layer] = Math.max(byLayer[s.layer] ?? 0, s.confidence);
@@ -122,9 +132,23 @@ export function combineVerdict(signals: LayerSignal[]): SecurityResult {
     };
   }
 
-  // Single layer >= BLOCK (no cross-confirm) degrades to WARN to avoid FPs.
+  // Single layer >= BLOCK (no cross-confirm).
+  // For user-input: degrade to WARN (Stack Overflow FP mitigation).
+  // For tool-output (opts.toolOutput): BLOCK directly — the content wasn't
+  // user-authored, so the "it might be a developer asking about injection"
+  // concern doesn't apply. The transcript classifier may have degraded
+  // (timeout, Haiku unavailable) and should not be a get-out-of-jail card
+  // for a hostile page.
   const maxMl = Math.max(content, deberta, transcript);
   if (maxMl >= THRESHOLDS.BLOCK) {
+    if (opts.toolOutput) {
+      return {
+        verdict: 'block',
+        reason: 'single_layer_tool_output',
+        signals,
+        confidence: maxMl,
+      };
+    }
     return {
       verdict: 'warn',
       reason: 'single_layer_high',
