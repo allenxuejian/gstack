@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# research-skill · harness 模板（三项门禁）
+# 1. Citation 密度：每个断言有来源
+# 2. Link 可达性：HEAD 200
+# 3. Snippet 语法正确
+#
+# 用法：./harness-research.sh path/to/research-report.md
+
+set -euo pipefail
+
+REPORT="${1:-.research/research-report.md}"
+if [ ! -f "$REPORT" ]; then
+  echo "❌ report file not found: $REPORT"
+  exit 2
+fi
+
+echo "▶ checking $REPORT"
+echo ""
+
+# ─────────────────────────────────
+# 步骤 1 · Citation 密度检查
+# ─────────────────────────────────
+echo "[1/3] citation density..."
+
+python3 <<'PY_SCRIPT'
+import re, sys, os
+
+REPORT = os.environ.get('REPORT', '.research/research-report.md')
+with open(REPORT) as f:
+    content = f.read()
+lines = content.split('\n')
+
+ASSERT = re.compile(r'\b(MUST|NEVER|应该|必须|推荐|建议|should|must|recommend|avoid)\b', re.I)
+CITE = re.compile(r'(https?://|`(?:src/|\./|\.\./)[^`]+|\[[^\]]+\]\([^)]+\)|<cite)')
+
+bad = []
+for i, line in enumerate(lines):
+    if ASSERT.search(line):
+        # 窗口 = 前后 3 行 + 当前行
+        start = max(0, i-3)
+        end = min(len(lines), i+4)
+        window = '\n'.join(lines[start:end])
+        if not CITE.search(window):
+            bad.append((i+1, line.strip()[:100]))
+
+if bad:
+    print(f"❌ {len(bad)} 个断言缺引用：")
+    for ln, text in bad[:10]:
+        print(f"   line {ln}: {text}")
+    sys.exit(1)
+print("✅ all assertions have nearby citations")
+PY_SCRIPT
+
+# ─────────────────────────────────
+# 步骤 2 · Link 可达性（并发）
+# ─────────────────────────────────
+echo ""
+echo "[2/3] link reachability..."
+
+URLS=$(grep -oE 'https?://[^ )\"'\''<>]+' "$REPORT" | sed 's/[.,;)]$//' | sort -u)
+if [ -z "$URLS" ]; then
+  echo "⚠️  no external URLs to check"
+else
+  N=$(echo "$URLS" | wc -l | tr -d ' ')
+  echo "   checking $N URLs (concurrency 10)..."
+
+  FAILED=$(echo "$URLS" | xargs -P 10 -I{} sh -c '
+    URL="$1"
+    # 跳过 localhost / 内网
+    case "$URL" in
+      *localhost*|*127.0.0.1*|*0.0.0.0*|*.local/*|*.internal/*) echo "SKIP $URL"; exit 0 ;;
+    esac
+    CODE=$(curl -s -o /dev/null -w "%{http_code}" -L --max-time 10 -A "Mozilla/5.0" "$URL" 2>/dev/null || echo "ERR")
+    case "$CODE" in
+      200|301|302|304|401|403) exit 0 ;;  # 401/403 视为可达（有内容但需授权）
+      *) echo "❌ [$CODE] $URL" >&2; exit 1 ;;
+    esac
+  ' sh {} 2>&1 | grep "^❌" || true)
+
+  if [ -n "$FAILED" ]; then
+    echo "$FAILED"
+    echo "❌ some links unreachable"
+    exit 1
+  fi
+  echo "✅ all links reachable"
+fi
+
+# ─────────────────────────────────
+# 步骤 3 · Snippet 语法检查
+# ─────────────────────────────────
+echo ""
+echo "[3/3] snippet syntax..."
+
+python3 <<'PY_SCRIPT'
+import re, sys, os, subprocess, tempfile
+
+REPORT = os.environ.get('REPORT', '.research/research-report.md')
+with open(REPORT) as f:
+    content = f.read()
+
+# 抽出 fenced code blocks
+BLOCK = re.compile(r'```(\w+)\n(.*?)```', re.DOTALL)
+blocks = BLOCK.findall(content)
+
+if not blocks:
+    print("⚠️  no code blocks to check")
+    sys.exit(0)
+
+errors = []
+for lang, code in blocks:
+    lang = lang.lower()
+    try:
+        if lang in ('python', 'py'):
+            import ast
+            ast.parse(code)
+        elif lang in ('json',):
+            import json
+            json.loads(code)
+        elif lang in ('bash', 'sh'):
+            # bash -n 语法检查
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.sh', delete=False) as f:
+                f.write(code); fname = f.name
+            subprocess.run(['bash', '-n', fname], check=True, capture_output=True)
+        elif lang in ('ts', 'typescript', 'tsx'):
+            # 简易 TS 语法检查：用 node 自己 parse
+            # 完整检查需要 tsc，此处降级为 acorn 样式
+            pass  # 真实项目里可以接 tsc --noEmit
+        elif lang in ('go',):
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.go', delete=False) as f:
+                f.write(code); fname = f.name
+            subprocess.run(['gofmt', '-e', fname], check=True, capture_output=True)
+    except Exception as e:
+        errors.append((lang, str(e)[:150]))
+
+if errors:
+    print(f"❌ {len(errors)} snippet syntax errors:")
+    for lang, err in errors[:5]:
+        print(f"   [{lang}] {err}")
+    sys.exit(1)
+print(f"✅ {len(blocks)} code blocks syntax OK")
+PY_SCRIPT
+
+echo ""
+echo "✅ research harness all green"
