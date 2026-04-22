@@ -206,6 +206,12 @@ export const E2E_TOUCHFILES: Record<string, string[]> = {
   'journey-retro':          ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-design-system':  ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
   'journey-visual-qa':      ['*/SKILL.md.tmpl', 'SKILL.md.tmpl', 'scripts/gen-skill-docs.ts'],
+
+  // Opus 4.7 behavior evals — depend on overlay + routing + resolver
+  'fanout: overlay ON emits >= parallel calls vs overlay OFF on 3-file investigate task':
+    ['model-overlays/claude.md', 'model-overlays/opus-4-7.md', 'scripts/models.ts', 'scripts/resolvers/model-overlay.ts'],
+  'routing precision: positives route, negatives do not':
+    ['SKILL.md.tmpl', 'scripts/resolvers/preamble/generate-routing-injection.ts', 'model-overlays/opus-4-7.md'],
 };
 
 /**
@@ -372,6 +378,10 @@ export const E2E_TIERS: Record<string, 'gate' | 'periodic'> = {
   'journey-retro': 'periodic',
   'journey-design-system': 'periodic',
   'journey-visual-qa': 'periodic',
+
+  // Opus 4.7 overlay evals — periodic (non-deterministic LLM behavior + Opus cost)
+  'fanout: overlay ON emits >= parallel calls vs overlay OFF on 3-file investigate task': 'periodic',
+  'routing precision: positives route, negatives do not': 'periodic',
 };
 
 /**
