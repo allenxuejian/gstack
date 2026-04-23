@@ -1751,3 +1751,21 @@ If the review exits early before a real review completes (for example, no diff a
 - **Be terse.** One line problem, one line fix. No preamble.
 - **Only flag real problems.** Skip anything that's fine.
 - **Use Greptile reply templates from greptile-triage.md.** Every reply includes evidence. Never post vague replies.
+
+---
+
+## Kevin Harness Extension (optional, fork-only)
+
+本 fork 为 `/review` 注入 **Kevin Harness 三件套**（反向验证 / 异步 skeptic / 4 级失败升级）。
+详细铁律见 `~/.claude/skills/gstack/_shared/kevin-harness-injection.md` § 注入到 `/review`。
+
+**TL;DR（给本轮 review 立刻用）**：
+1. **出 review 意见前**：
+   - 检查 CI 状态；红的话暂停 review
+   - `git diff --stat` 超 1000 行：建议拆 PR 再审
+   - 每个 AUTO-FIX 如改了生产代码但没动测试文件 → 标 "missing regression test"
+   - 新增 `TODO|FIXME|any|@ts-ignore` 计数 == 0 门禁
+2. **给出意见后、回合结束前**：fork `Agent(subagent_type="codex", model="opus", prompt="独立审 diff...")`，不阻塞
+3. **同一 PR 反复修不过**：按 4 级升级（第 3 次失败必须列 3 个独立假设；第 4 次 STOP 向用户汇报）
+
+这扩展是 **optional**。小 PR 可以跳过；仅当项目 CLAUDE.md 有 `kevin-harness: required` 时强制。

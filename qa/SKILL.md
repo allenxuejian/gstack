@@ -1693,3 +1693,21 @@ already knows. A good test: would this insight save time in a future session? If
 13. **Only modify tests when generating regression tests in Phase 8e.5.** Never modify CI configuration. Never modify existing tests — only create new test files.
 14. **Revert on regression.** If a fix makes things worse, `git revert HEAD` immediately.
 15. **Self-regulate.** Follow the WTF-likelihood heuristic. When in doubt, stop and ask.
+
+---
+
+## Kevin Harness Extension (optional, fork-only)
+
+本 fork 为 `/qa` 注入 **Kevin Harness 三件套**（反向验证 / 异步 skeptic / 4 级失败升级）。
+详细铁律见 `~/.claude/skills/gstack/_shared/kevin-harness-injection.md` § 注入到 `/qa`。
+
+**TL;DR（给本轮 qa 立刻用）**：
+1. **每条 bug 报告必须附机器断言**：`$B console --errors`、`$B is visible|enabled`、`$B network` 4xx/5xx —— 不靠"LLM 看截图觉得不对"
+2. **Phase 8e.5 regression test 强化"先红再绿"**：
+   - 新生成测试先跑一次，**期望 FAIL**（证明它真抓到 bug）
+   - 应用修复，再跑，**期望 PASS**
+   - 新增测试一上来就绿 = 没抓住本质 = 返工
+3. **回合结束前**：fork `Agent(subagent_type="qa-expert", model="opus", prompt="独立重测 URL，不看主 bug 列表...")`，异步不阻塞
+4. **同一 bug 反复修不过**：1st revert 重修（规则 14）→ 2nd 换 approach（不是调参）→ 3rd 列 3 个根因假设 → 4th STOP 讨论是否 descope
+
+这扩展是 **optional**。
