@@ -1,0 +1,130 @@
+# Design Handoff Schema · 单点事实
+# ui-skill 产出必须符合，dev-skill 启动时 validate
+# 任何字段调整必须同步两 skill 的引用
+
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "handoff-schema.yaml"
+title: "Design Handoff · UI → Dev 交付契约"
+type: object
+required: [feature_id, prototype, design_tokens, components_used, interactions, tweaks, accessibility]
+
+properties:
+  feature_id:
+    type: string
+    pattern: "^[a-z][a-z0-9-]{2,50}$"
+    description: "必须等于 prd.yaml 的 feature.id"
+
+  prototype:
+    type: object
+    required: [main_file, variants]
+    properties:
+      main_file:
+        type: string
+        description: "相对路径 · 例 .design/onboarding/prototype.html"
+      variants:
+        type: array
+        minItems: 3
+        description: "至少 3 个变体 · Claude Design 铁律"
+        items:
+          type: object
+          required: [id, description, key_difference]
+          properties:
+            id:
+              type: string
+              pattern: "^option-[a-z]$"
+            description: { type: string }
+            key_difference:
+              type: string
+              description: "与其他变体的关键差异 · 不是装饰差异"
+
+  design_tokens:
+    type: object
+    required: [colors, typography, spacing]
+    properties:
+      colors:
+        type: object
+        required: [primary, text_primary, bg_primary]
+        additionalProperties:
+          type: string
+          pattern: "^(#[0-9a-fA-F]{3,8}|oklch\\(.*\\)|rgba?\\(.*\\))$"
+      typography:
+        type: object
+        required: [scale]
+        properties:
+          scale:
+            type: array
+            minItems: 3
+            description: "字号阶梯 · 至少 3 级（headline / body / caption）"
+      spacing:
+        type: array
+        minItems: 4
+        description: "间距阶梯 · 4px/8px 为基底"
+      radius:
+        type: array
+        items:
+          type: number
+
+  components_used:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required: [name, source]
+      properties:
+        name: { type: string }
+        source:
+          enum: [starter_component, custom, design_system]
+          description: "来源追溯 · 优先用 starter / design_system"
+        props_api:
+          type: object
+          additionalProperties: { type: string }
+
+  interactions:
+    type: array
+    description: "可为空（纯静态设计）但必须存在字段"
+    items:
+      type: object
+      required: [trigger, effect]
+      properties:
+        trigger: { type: string }
+        effect: { type: string }
+        timing_ms:
+          type: integer
+          minimum: 0
+
+  tweaks:
+    type: object
+    required: [defaults_block_present, keys]
+    description: "Claude Design Tweaks protocol · 暴露可调旋钮"
+    properties:
+      defaults_block_present:
+        type: boolean
+        description: "/*EDITMODE-BEGIN*/ ... /*EDITMODE-END*/ 块是否存在"
+      keys:
+        type: array
+        description: "用户可调整的键 · 空数组表示无 Tweaks"
+        items: { type: string }
+
+  accessibility:
+    type: object
+    required: [contrast_level, keyboard_nav]
+    properties:
+      contrast_level:
+        enum: [AA, AAA, partial, unverified]
+      keyboard_nav:
+        enum: [full, partial, none]
+      screen_reader_labels:
+        type: boolean
+
+  # 给 dev-skill 的实现提示
+  implementation_hints:
+    type: object
+    properties:
+      framework_suggestion:
+        enum: [react, vue, svelte, vanilla, any]
+      critical_css_patterns:
+        type: array
+        items: { type: string }
+      reusable_components:
+        type: array
+        items: { type: string }

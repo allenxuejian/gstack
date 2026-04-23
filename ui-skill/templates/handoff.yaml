@@ -1,0 +1,63 @@
+# UI Design Handoff · 填空版
+# 校验：./harness-ui.sh 会 validate 对 _shared/schemas/handoff-schema.yaml
+
+feature_id: <从 prd.yaml feature.id 复制>
+
+prototype:
+  main_file: .design/<feature>/prototype.html
+  variants:
+    - id: option-a
+      description: <一句话>
+      key_difference: <与其他变体的关键差异 · 不是装饰差异>
+    - id: option-b
+      description: <一句话>
+      key_difference: <具体差在哪>
+    - id: option-c
+      description: <一句话>
+      key_difference: <具体差在哪>
+
+design_tokens:
+  colors:
+    primary: "#D97757"
+    text_primary: "#1a1a1a"
+    bg_primary: "#fafaf7"
+    # 其他按需补
+  typography:
+    scale: [12, 14, 16, 20, 28, 40]
+    weights: [400, 500, 600]
+  spacing: [4, 8, 12, 16, 24, 32, 48, 64]
+  radius: [0, 4, 8, 16, 24]
+
+components_used:
+  - name: Card
+    source: custom
+    props_api:
+      title: string
+      variant: "option-a | option-b | option-c"
+  # 更多组件
+
+interactions:
+  - trigger: "click on variant-b card"
+    effect: "toggle expanded state"
+    timing_ms: 200
+
+tweaks:
+  defaults_block_present: true
+  keys:
+    - primaryColor
+    - fontSize
+    - dark
+
+accessibility:
+  contrast_level: AA
+  keyboard_nav: full
+  screen_reader_labels: true
+
+implementation_hints:
+  framework_suggestion: react
+  critical_css_patterns:
+    - "style 对象按组件命名 · 禁止 const styles = {}"
+    - "hover state 用 :hover CSS 而非 React state（性能）"
+  reusable_components:
+    - Card
+    - Button

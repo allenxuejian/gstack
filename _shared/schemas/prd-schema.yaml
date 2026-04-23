@@ -1,0 +1,256 @@
+# PRD Schema · 单点事实（single source of truth）
+# 两 skill 都指这一份：pm-skill 产出必须符合，ui-skill 启动时先 validate
+# 任何字段调整必须在一次 commit 内同步两 skill 的引用
+
+$schema: "http://json-schema.org/draft-07/schema#"
+$id: "prd-schema.yaml"
+title: "Product Requirements Document"
+type: object
+required: [feature, problem, users, scenarios, solution, acceptance_criteria, metrics, rollout, ui_brief]
+
+properties:
+  # ────────────────────────────────────────────────
+  feature:
+    type: object
+    required: [id, title, owner, status]
+    properties:
+      id:
+        type: string
+        pattern: "^[a-z][a-z0-9-]{2,50}$"
+        description: "kebab-case · 例 mobile-onboarding-v2"
+      title:
+        type: string
+        maxLength: 120
+      owner:
+        type: string
+      status:
+        enum: [draft, review, approved, shipped, deprecated]
+      created_at:
+        type: string
+        format: date
+
+  # ────────────────────────────────────────────────
+  problem:
+    type: object
+    required: [user_pain, business_value, non_goals]
+    properties:
+      user_pain:
+        type: object
+        required: [statement, source]
+        properties:
+          statement:
+            type: string
+          source:
+            type: string
+            description: "必须有来源 · URL / 访谈笔记路径 / 数据 query"
+      business_value:
+        type: object
+        required: [statement, metric_baseline]
+        properties:
+          statement:
+            type: string
+          metric_baseline:
+            type: string
+            description: "当前指标值 · 基线数据"
+      non_goals:
+        type: array
+        minItems: 1
+        description: "至少列 1 个明确不做的事（避免 PM 俗套：什么都做）"
+        items:
+          type: string
+
+  # ────────────────────────────────────────────────
+  users:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required: [persona, needs, current_workaround]
+      properties:
+        persona: { type: string }
+        needs:
+          type: array
+          minItems: 1
+          items: { type: string }
+        current_workaround:
+          type: string
+          description: "用户现在怎么凑合着用 · 不能留空"
+
+  # ────────────────────────────────────────────────
+  scenarios:
+    type: array
+    minItems: 1
+    items:
+      type: object
+      required: [id, title, trigger, flow, success_criteria]
+      properties:
+        id:
+          type: string
+          pattern: "^scenario-[0-9]+$"
+        title: { type: string }
+        trigger: { type: string }
+        flow:
+          type: array
+          minItems: 2
+          items: { type: string }
+        success_criteria: { type: string }
+
+  # ────────────────────────────────────────────────
+  solution:
+    type: object
+    required: [approach, alternatives_rejected, key_decisions]
+    properties:
+      approach:
+        type: object
+        required: [summary, why_this]
+        properties:
+          summary: { type: string }
+          why_this: { type: string }
+      alternatives_rejected:
+        type: array
+        minItems: 1
+        description: "至少 1 个 · 证明你真的考虑过其他方案"
+        items:
+          type: object
+          required: [name, why_no]
+          properties:
+            name: { type: string }
+            why_no: { type: string }
+      key_decisions:
+        type: array
+        items:
+          type: object
+          required: [decision, reasoning]
+          properties:
+            decision: { type: string }
+            reasoning: { type: string }
+
+  # ────────────────────────────────────────────────
+  acceptance_criteria:
+    type: array
+    minItems: 1
+    description: "每条 Gherkin 格式 · harness 强校验 measurable=true"
+    items:
+      type: object
+      required: [given, when, then, measurable]
+      properties:
+        given: { type: string }
+        when: { type: string }
+        then: { type: string }
+        measurable:
+          type: boolean
+          const: true
+          description: "必须 true · 不可测的不算 AC"
+        test_hint:
+          type: string
+          description: "给 test-skill 的测试生成提示"
+
+  # ────────────────────────────────────────────────
+  metrics:
+    type: object
+    required: [north_star, guardrails]
+    properties:
+      north_star:
+        type: object
+        required: [name, target, rationale]
+        description: "唯一一个 · 不能多"
+        properties:
+          name: { type: string }
+          target: { type: string }
+          rationale:
+            type: string
+            description: "为什么是这个指标 · 避免 UV/PV 堆砌"
+      guardrails:
+        type: array
+        minItems: 1
+        description: "不能退化的指标 · 至少列 1 个"
+        items:
+          type: object
+          required: [name, threshold]
+          properties:
+            name: { type: string }
+            threshold: { type: string }
+      leading_indicators:
+        type: array
+        items:
+          type: string
+
+  # ────────────────────────────────────────────────
+  rollout:
+    type: object
+    required: [phases, rollback_plan, risk_matrix]
+    properties:
+      phases:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          required: [name, audience, percentage]
+          properties:
+            name: { type: string }
+            audience: { type: string }
+            percentage:
+              type: number
+              minimum: 0
+              maximum: 100
+            duration: { type: string }
+      rollback_plan:
+        type: string
+        description: "具体怎么回滚 · 不能留空"
+      risk_matrix:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          required: [risk, probability, impact, mitigation]
+          properties:
+            risk: { type: string }
+            probability: { enum: [low, medium, high] }
+            impact: { enum: [low, medium, high] }
+            mitigation: { type: string }
+
+  # ────────────────────────────────────────────────
+  ui_brief:
+    type: object
+    required: [screens, flow, design_system_ref]
+    description: "👈 给 ui-skill 的输入契约 · 没它 ui-skill 无法启动"
+    properties:
+      screens:
+        type: array
+        minItems: 1
+        items:
+          type: object
+          required: [id, goal, primary_action, states, variants_desired, priority_axes]
+          properties:
+            id:
+              type: string
+              pattern: "^[a-z][a-z0-9-]{2,50}$"
+            goal: { type: string }
+            primary_action: { type: string }
+            states:
+              type: array
+              minItems: 1
+              items:
+                enum: [default, loading, empty, error, success, disabled]
+            variants_desired:
+              type: integer
+              minimum: 3
+              description: "至少 3 个变体 · Claude Design 铁律"
+            priority_axes:
+              type: array
+              minItems: 1
+              items:
+                enum: [novel_interaction, clarity, brand, density, motion, copy_tone]
+            copy_tone:
+              enum: [formal, friendly_direct, playful, clinical, empathetic]
+            constraints:
+              type: array
+              items: { type: string }
+      flow:
+        type: array
+        minItems: 1
+        description: "screen id 的流转顺序"
+        items: { type: string }
+      design_system_ref:
+        type: string
+        description: "UI kit 路径 / Figma 链接 / design tokens 位置"

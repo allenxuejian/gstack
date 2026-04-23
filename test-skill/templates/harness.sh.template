@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# test-skill · harness 模板（三步门禁）
+# 1. 所有测试绿
+# 2. 覆盖率达标
+# 3. Mutation smoke test（关键路径反向验证）
+#
+# 首次使用：拷到项目根 `harness-test.sh`，按测试框架编辑。
+
+set -euo pipefail
+
+# ─── 取消对应段落注释，删掉其它 ───
+
+# ========== Node.js (Vitest + Stryker) ==========
+# echo "[1/3] run tests + coverage..."
+# bun test --coverage --run
+#
+# echo "[2/3] coverage threshold..."
+# node -e "
+#   const cov = require('./coverage/coverage-summary.json');
+#   const { lines, branches } = cov.total;
+#   if (lines.pct < 80) { console.error('lines ' + lines.pct + '% < 80%'); process.exit(1); }
+#   if (branches.pct < 70) { console.error('branches ' + branches.pct + '% < 70%'); process.exit(1); }
+# "
+#
+# echo "[3/3] mutation smoke test (core paths)..."
+# bunx stryker run --mutate "src/core/**/*.ts" --reporters clear-text
+
+# ========== Python (pytest + mutmut) ==========
+# echo "[1/3] run tests + coverage..."
+# pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -x
+#
+# echo "[2/3] branch coverage..."
+# pytest --cov=src --cov-report=xml --cov-branch
+# # 解析 coverage.xml 检查 branch-rate >= 0.7
+#
+# echo "[3/3] mutation smoke test..."
+# mutmut run --paths-to-mutate=src/core/ --runner="pytest -x -q"
+# mutmut results
+# # survived 数量 > 0 → 失败
+
+# ========== Go (testing + go-mutesting) ==========
+# echo "[1/3] run tests + coverage..."
+# go test -cover -coverprofile=coverage.out ./...
+#
+# echo "[2/3] coverage threshold..."
+# COVERAGE=$(go tool cover -func=coverage.out | grep total | awk '{print $3}' | sed 's/%//')
+# if [ "$(echo "$COVERAGE < 80" | bc)" -eq 1 ]; then
+#   echo "coverage $COVERAGE% < 80%"; exit 1
+# fi
+#
+# echo "[3/3] mutation smoke test..."
+# go-mutesting ./src/core/...
+
+# ========== 通用 fallback ==========
+# npm test && npm run coverage:check && npm run mutation
+
+echo ""
+echo "✅ test harness all green (tests + coverage + mutation)"

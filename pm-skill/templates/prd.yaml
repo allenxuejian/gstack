@@ -1,0 +1,121 @@
+# PRD · 按 ~/.claude/skills/gstack/_shared/schemas/prd-schema.yaml 填空
+# 校验：./harness-pm.sh <此文件路径>
+# 所有 "<TODO ...>" 占位符必须替换掉 harness 才会绿
+#
+# ⚠️ YAML 注意事项：placeholder 用 "<...>" 双引号包起来
+# （否则 YAML 把 `<` 当成保留 tag 语法 · 会 parse error）
+
+feature:
+  id: "<kebab-case-id>"                # 例 mobile-onboarding-v2
+  title: "<一句话描述>"
+  owner: kevin
+  status: draft                        # draft | review | approved | shipped
+  created_at: "2026-04-18"
+
+# ────────────────────────────────────────────────
+problem:
+  user_pain:
+    statement: "<用户的具体痛点 · 不是功能缺失>"
+    source: "<必填 · URL / 访谈笔记路径 / 数据 query / 支持工单编号>"
+
+  business_value:
+    statement: "<为什么现在做 · 业务价值>"
+    metric_baseline: "<当前基线数据 · 例 当前付费率 3.2% (2026-Q1)>"
+
+  non_goals:                            # 至少 1 条 · harness 强校验
+    - "<明确不做的事 1>"
+    - "<明确不做的事 2>"
+
+# ────────────────────────────────────────────────
+users:
+  - persona: "<画像名 · 例 首次使用的 30+ 职场女性>"
+    needs:
+      - "<需求 1>"
+      - "<需求 2>"
+    current_workaround: "<他们现在怎么凑合 · 不能留空>"
+
+# ────────────────────────────────────────────────
+scenarios:
+  - id: scenario-1
+    title: "<场景名>"
+    trigger: "<什么情况触发>"
+    flow:
+      - "<步骤 1>"
+      - "<步骤 2>"
+    success_criteria: "<成功什么样>"
+
+# ────────────────────────────────────────────────
+solution:
+  approach:
+    summary: "<方案一句话>"
+    why_this: "<为什么选这个 · 不能空>"
+
+  alternatives_rejected:                # 至少 1 个 · harness 强校验
+    - name: "<方案 B 名>"
+      why_no: "<为什么不选>"
+
+  key_decisions:
+    - decision: "<关键决策>"
+      reasoning: "<为什么这么决定>"
+
+# ────────────────────────────────────────────────
+acceptance_criteria:                    # 每条 Gherkin · measurable: true · harness 强校验
+  - given: "<前置条件>"
+    when: "<触发动作>"
+    then: "<期望结果 · 可观察的状态变化>"
+    measurable: true                    # 必须 true
+    test_hint: "<给 test-skill 用 · 可选>"
+
+# ────────────────────────────────────────────────
+metrics:
+  north_star:                           # 唯一 · harness 强校验
+    name: "<指标名 · 例 7 日新用户付费转化率>"
+    target: "<目标值 · 例 8% (current: 3.2%)>"
+    rationale: "<为什么是这个指标 · 不是 UV/PV>"
+
+  guardrails:                           # ≥1 · 不能退化
+    - name: "<指标名 · 例 整体 DAU 留存>"
+      threshold: "<不能低于多少>"
+
+  leading_indicators:                   # 早期信号（可选）
+    - "<指标>"
+
+# ────────────────────────────────────────────────
+rollout:
+  phases:
+    - name: phase-1
+      audience: "<5% new users>"
+      percentage: 5
+      duration: "<3 天>"
+
+  rollback_plan: "<具体怎么回滚 · 不能留空>"
+
+  risk_matrix:
+    - risk: "<风险描述>"
+      probability: medium               # low | medium | high
+      impact: high                      # low | medium | high
+      mitigation: "<缓解方案>"
+
+# ────────────────────────────────────────────────
+ui_brief:                               # 👈 下游 UI skill 的输入契约 · 必填全量
+  screens:
+    - id: "<kebab-case-id>"             # 例 onboarding-step-1
+      goal: "<用户在此屏要完成什么 · 30 秒能 say>"
+      primary_action: "<主 CTA>"
+      states:
+        - default
+        - loading
+        - error
+        - success
+      variants_desired: 3               # 必须 ≥3
+      priority_axes:
+        - novel_interaction             # 选 1+: novel_interaction | clarity | brand | density | motion | copy_tone
+      copy_tone: friendly_direct        # formal | friendly_direct | playful | clinical | empathetic
+      constraints:
+        - "<设计约束 1>"
+
+  flow:                                 # screen id 顺序
+    - "<screen-id-1>"
+    - "<screen-id-2>"
+
+  design_system_ref: "<UI kit 路径 / Figma 链接 / design tokens 位置>"

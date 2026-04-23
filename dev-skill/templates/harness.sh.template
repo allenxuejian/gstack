@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# dev-skill · harness 模板
+# 首次使用：拷到项目根目录，按技术栈编辑命令，AskUserQuestion 确认后开跑。
+#
+# 约束：
+# - 任一命令失败立即中断 (set -e)
+# - 通常 <2 分钟跑完（E2E / 全集成测试放 harness-full.sh）
+# - 沿用项目已有的 script（package.json / Makefile），少重复定义
+
+set -euo pipefail
+
+# ─────────────────────────────────────────────────────────
+# 请根据项目技术栈取消对应段落注释，删掉其它段落
+# ─────────────────────────────────────────────────────────
+
+# ========== Node.js (Bun) ==========
+# echo "[1/4] lint..."      && bun run lint
+# echo "[2/4] typecheck..." && bun run typecheck
+# echo "[3/4] test..."      && bun test
+# echo "[4/4] build..."     && bun run build
+
+# ========== Node.js (pnpm) ==========
+# echo "[1/4] lint..."      && pnpm lint
+# echo "[2/4] typecheck..." && pnpm typecheck
+# echo "[3/4] test..."      && pnpm test -- --run  # vitest 默认 watch，需 --run
+# echo "[4/4] build..."     && pnpm build
+
+# ========== Python ==========
+# echo "[1/3] lint..."      && ruff check .
+# echo "[2/3] typecheck..." && mypy .
+# echo "[3/3] test..."      && pytest -x --tb=short
+
+# ========== Go ==========
+# echo "[1/3] vet..."       && go vet ./...
+# echo "[2/3] test..."      && go test ./...
+# echo "[3/3] build..."     && go build ./...
+
+# ========== Rust ==========
+# echo "[1/3] clippy..."    && cargo clippy -- -D warnings
+# echo "[2/3] test..."      && cargo test
+# echo "[3/3] build..."     && cargo build --release
+
+# ========== 通用（Makefile / 自定义脚本）==========
+# make check
+# 或
+# npm run ci
+
+echo ""
+echo "✅ harness all green"

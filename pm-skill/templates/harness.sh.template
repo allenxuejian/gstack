@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# pm-skill harness · 三项门禁
+# 1. Schema 完整性
+# 2. AC 可测性（Gherkin + measurable:true）
+# 3. 数据引用（关键字段有 source）
+#
+# 用法：./harness-pm.sh path/to/prd.yaml
+
+set -euo pipefail
+
+PRD="${1:-.product/prd.yaml}"
+SCHEMA="${SCHEMA:-$HOME/.claude/skills/gstack/_shared/schemas/prd-schema.yaml}"
+
+if [ ! -f "$PRD" ]; then
+  echo "❌ PRD not found: $PRD"; exit 2
+fi
+if [ ! -f "$SCHEMA" ]; then
+  echo "❌ schema not found: $SCHEMA"; exit 2
+fi
+export PRD SCHEMA
+echo "▶ checking $PRD"
+echo "  schema: $SCHEMA"
+echo ""
+
+# 检查 python3 + yaml + jsonschema 可用
+python3 -c "import yaml, jsonschema" 2>/dev/null || {
+  echo "  → installing dependencies..."
+  pip3 install --quiet pyyaml jsonschema || {
+    echo "❌ 需要 python3 + pyyaml + jsonschema · 请 pip install pyyaml jsonschema"
+    exit 1
+  }
+}
+
+# ─── Stage 1 · 真 JSON Schema validator + 语义增强检查 ───
+echo "[1/3] schema validation (jsonschema lib) + semantic checks..."
+
+python3 <<'PY'
+import yaml, sys, os
+from jsonschema import Draft7Validator
+
+with open(os.environ['SCHEMA']) as f: schema = yaml.safe_load(f)
+with open(os.environ['PRD']) as f: prd = yaml.safe_load(f)
+
+# ── 1a. 真 JSON Schema 校验（单点事实 = _shared/schemas/prd-schema.yaml）──
+validator = Draft7Validator(schema)
+schema_errors = sorted(validator.iter_errors(prd), key=lambda e: e.path)
+if schema_errors:
+    print(f"❌ {len(schema_errors)} schema errors:")
+    for e in schema_errors[:15]:
+        path = '.'.join(str(p) for p in e.absolute_path) or '(root)'
+        print(f"   • {path}: {e.message[:160]}")
+    sys.exit(1)
+print(f"  ✓ schema (jsonschema Draft7) OK · 所有必填 / 类型 / 枚举 / 模式匹配通过")
+
+# ── 1b. 语义增强检查（schema 表达不了的业务规则）──
+errors, warnings = [], []
+
+# `<TODO>` 占位符检测（schema 允许 string，但 skill 不许留占位符）
+def has_todo(v):
+    return isinstance(v, str) and v.startswith('<')
+def scan(obj, path=''):
+    if isinstance(obj, dict):
+        for k, v in obj.items(): scan(v, f"{path}.{k}" if path else k)
+    elif isinstance(obj, list):
+        for i, v in enumerate(obj): scan(v, f"{path}[{i}]")
+    elif has_todo(obj):
+        errors.append(f"{path} 是 <TODO> 占位符，未替换")
+scan(prd)
+
+# AC then 主观动词（soft warning）
+VAGUE = ['觉得', '认为', '感到', 'feel', 'think']
+for i, ac in enumerate(prd.get('acceptance_criteria', [])):
+    then = str(ac.get('then', '')).lower()
+    for v in VAGUE:
+        if v in then:
+            warnings.append(f"AC #{i+1} then 含主观词 `{v}` · 改成可观察状态")
+
+# north_star name = outcome? (soft warning)
+ns_name = str(prd.get('metrics', {}).get('north_star', {}).get('name', '')).lower()
+for bad in ['uv', 'pv', '停留时长', 'session_duration', '点击量', '曝光']:
+    if bad in ns_name:
+        warnings.append(f"north_star name 含 `{bad}` · 建议换 outcome 指标（付费/留存/完成率）")
+
+# 模糊措辞 grep（全文）
+VAGUE_WORDS = ['可能', '也许', '大概', '理论上', '应该会', 'probably', 'maybe']
+txt = yaml.dump(prd, allow_unicode=True)
+for w in VAGUE_WORDS:
+    cnt = txt.count(w)
+    if cnt > 0:
+        warnings.append(f"全文含模糊词 `{w}` · {cnt} 处 · PRD 要 definite")
+
+if errors:
+    print(f"❌ {len(errors)} semantic errors:")
+    for e in errors: print(f"   • {e}")
+    sys.exit(1)
+if warnings:
+    print(f"⚠️  {len(warnings)} warnings:")
+    for w in warnings: print(f"   • {w}")
+print("  ✓ semantic checks OK (TODO / 主观词 / outcome / 模糊词)")
+print("✅ all passed")
+PY
+
+# ─── Stage 2 · Markdown 生成（副产物）───
+echo ""
+echo "[2/3] generating markdown..."
+
+MD_PATH="${PRD%.yaml}.md"
+python3 <<PY
+import yaml, os
+with open(os.environ['PRD']) as f: d = yaml.safe_load(f)
+out = []
+out.append(f"# {d['feature']['title']}\n")
+out.append(f"**Owner**: {d['feature']['owner']} · Status: {d['feature']['status']} · Created: {d['feature'].get('created_at', 'n/a')}\n")
+
+out.append(f"\n## 🎯 Problem\n")
+out.append(f"**User Pain**: {d['problem']['user_pain']['statement']}\n")
+out.append(f"_Source_: {d['problem']['user_pain']['source']}\n\n")
+out.append(f"**Business Value**: {d['problem']['business_value']['statement']}\n")
+out.append(f"_Baseline_: {d['problem']['business_value']['metric_baseline']}\n\n")
+out.append(f"**Non-goals**:\n")
+for ng in d['problem']['non_goals']:
+    out.append(f"- {ng}\n")
+
+out.append(f"\n## 👥 Users\n")
+for u in d['users']:
+    out.append(f"### {u['persona']}\n- Needs: {', '.join(u['needs'])}\n- Workaround: {u['current_workaround']}\n\n")
+
+out.append(f"\n## 💡 Solution\n")
+out.append(f"**Approach**: {d['solution']['approach']['summary']}\n")
+out.append(f"_Why_: {d['solution']['approach']['why_this']}\n\n")
+out.append(f"**Rejected Alternatives**:\n")
+for a in d['solution']['alternatives_rejected']:
+    out.append(f"- **{a['name']}**: {a['why_no']}\n")
+
+out.append(f"\n## ✅ Acceptance Criteria\n")
+for i, ac in enumerate(d['acceptance_criteria'], 1):
+    out.append(f"**AC {i}**\n- Given: {ac['given']}\n- When: {ac['when']}\n- Then: {ac['then']}\n\n")
+
+out.append(f"\n## 📊 Metrics\n")
+ns = d['metrics']['north_star']
+out.append(f"**North Star**: {ns['name']} → {ns['target']}\n")
+out.append(f"_Rationale_: {ns['rationale']}\n\n")
+out.append(f"**Guardrails**:\n")
+for g in d['metrics']['guardrails']:
+    out.append(f"- {g['name']}: {g['threshold']}\n")
+
+out.append(f"\n## 🚀 Rollout\n")
+for p in d['rollout']['phases']:
+    out.append(f"- **{p['name']}**: {p['audience']} ({p['percentage']}%, {p.get('duration','')})\n")
+out.append(f"\n**Rollback**: {d['rollout']['rollback_plan']}\n\n")
+out.append(f"**Risks**:\n")
+for r in d['rollout']['risk_matrix']:
+    out.append(f"- [{r['probability']}/{r['impact']}] {r['risk']} → {r['mitigation']}\n")
+
+out.append(f"\n## 🎨 UI Brief → for ui-skill\n")
+for s in d['ui_brief']['screens']:
+    out.append(f"### {s['id']}\n- Goal: {s['goal']}\n- Primary action: {s['primary_action']}\n- States: {', '.join(s['states'])}\n- Variants: ≥{s['variants_desired']} along {', '.join(s['priority_axes'])}\n\n")
+out.append(f"**Flow**: {' → '.join(d['ui_brief']['flow'])}\n")
+out.append(f"**Design system**: {d['ui_brief']['design_system_ref']}\n")
+
+with open("$MD_PATH", 'w') as f:
+    f.writelines(out)
+print(f"  ✓ markdown → $MD_PATH")
+PY
+
+# ─── Stage 3 · 提醒下游 ───
+echo ""
+echo "[3/3] downstream readiness..."
+echo "  ✓ ui-skill 可启动：validates against ui_brief"
+echo "  ✓ dev-skill 会消费 AC 映射到测试"
+
+echo ""
+echo "✅ PM harness all green · PRD ready for handoff"

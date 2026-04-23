@@ -1,0 +1,171 @@
+#!/usr/bin/env bash
+# ui-skill harness · 两阶段
+# 1. 静态（HTML / 变体 / Tweaks / style 冲突 / pinned / handoff schema）
+# 2. Playwright smoke（console.error == 0 · 截图回传）
+#
+# 用法：./harness-ui.sh path/to/prototype.html [path/to/handoff.yaml]
+
+set -euo pipefail
+
+PROTO="${1:-.design/prototype.html}"
+HANDOFF="${2:-.design/handoff.yaml}"
+
+if [ ! -f "$PROTO" ]; then
+  echo "❌ prototype not found: $PROTO"; exit 2
+fi
+
+export PROTO
+echo "▶ checking $PROTO"
+echo ""
+
+# ─── Stage 1 静态 ───
+echo "[1/3] static checks..."
+
+python3 <<'PY'
+import re, sys, os, json
+from html.parser import HTMLParser
+
+FILE = os.environ['PROTO']
+with open(FILE) as f:
+    html = f.read()
+
+# HTML parse
+class P(HTMLParser):
+    def error(self, msg): raise Exception(msg)
+try: P().feed(html)
+except Exception as e:
+    print(f"❌ HTML parse: {e}"); sys.exit(1)
+
+# variants ≥ 3
+variants = len(set(re.findall(r'(option-[a-c]|variant-[1-9]|data-variant="[^"]+")', html, re.I)))
+if variants < 3:
+    print(f"❌ only {variants} distinct variants (need ≥3)"); sys.exit(1)
+
+# Tweaks block（if present）
+tweaks = re.findall(r'/\*EDITMODE-BEGIN\*/(.*?)/\*EDITMODE-END\*/', html, re.S)
+if tweaks:
+    if len(tweaks) > 1:
+        print(f"❌ {len(tweaks)} EDITMODE blocks (must be exactly 1)"); sys.exit(1)
+    try: json.loads(tweaks[0].strip())
+    except Exception as e:
+        print(f"❌ EDITMODE block not valid JSON: {e}"); sys.exit(1)
+
+# style naming collision protection
+if re.search(r'\bconst\s+styles\s*=\s*\{', html):
+    print(f"❌ found `const styles = {{` (naming collision risk · use componentStyles instead)"); sys.exit(1)
+
+# pinned + integrity
+scripts = re.findall(r'<script[^>]*src="[^"]*(?:react|babel)[^"]*"[^>]*>', html)
+for s in scripts:
+    if 'integrity=' not in s:
+        print(f"❌ missing integrity: {s[:100]}..."); sys.exit(1)
+
+# no type="module" on babel scripts
+if re.search(r'<script[^>]*type="module"[^>]*>', html):
+    print(f"⚠️  found type=\"module\" · Claude Design 说会搞坏东西（警告，不 fail）")
+
+print(f"  ✓ HTML parse OK")
+print(f"  ✓ {variants} variants")
+print(f"  ✓ Tweaks block valid (or absent)")
+print(f"  ✓ no style naming collision")
+print(f"  ✓ pinned versions with integrity")
+PY
+
+# ─── Stage 2 Handoff schema · 真 JSON Schema validator ───
+echo ""
+echo "[2/3] handoff.yaml schema..."
+
+SCHEMA="${SCHEMA:-$HOME/.claude/skills/gstack/_shared/schemas/handoff-schema.yaml}"
+
+if [ -f "$HANDOFF" ]; then
+  # 确保依赖
+  python3 -c "import yaml, jsonschema" 2>/dev/null || {
+    echo "  → installing..."; pip3 install --quiet pyyaml jsonschema
+  }
+  export HANDOFF SCHEMA
+  python3 <<'PY'
+import yaml, sys, os
+from jsonschema import Draft7Validator
+
+with open(os.environ['SCHEMA']) as f: schema = yaml.safe_load(f)
+with open(os.environ['HANDOFF']) as f: d = yaml.safe_load(f)
+
+errors = sorted(Draft7Validator(schema).iter_errors(d), key=lambda e: e.path)
+if errors:
+    print(f"❌ {len(errors)} schema errors:")
+    for e in errors[:10]:
+        path = '.'.join(str(p) for p in e.absolute_path) or '(root)'
+        print(f"   • {path}: {e.message[:160]}")
+    sys.exit(1)
+print("  ✓ handoff.yaml schema OK (jsonschema Draft7)")
+PY
+else
+  echo "  ⚠️  no handoff.yaml at $HANDOFF (will be required before dev-skill starts)"
+fi
+
+# ─── Stage 3 Playwright smoke ───
+echo ""
+echo "[3/3] playwright smoke..."
+
+# 自动装 chromium（首次）
+if ! command -v npx > /dev/null && ! command -v bunx > /dev/null; then
+  echo "❌ 需要 npx 或 bunx"; exit 1
+fi
+
+RUN="bunx"
+command -v bunx > /dev/null || RUN="npx"
+
+# 检查 playwright 是否已装
+if ! $RUN playwright --version > /dev/null 2>&1; then
+  echo "  → installing playwright..."
+  $RUN --yes playwright@latest --version > /dev/null 2>&1 || true
+fi
+
+# 检查 chromium
+if ! ls ~/Library/Caches/ms-playwright/chromium-* > /dev/null 2>&1 && \
+   ! ls ~/.cache/ms-playwright/chromium-* > /dev/null 2>&1; then
+  echo "  → installing chromium (首次 ~100MB)..."
+  $RUN playwright install chromium
+fi
+
+# 跑 smoke 检查
+$RUN playwright-core > /dev/null 2>&1 || true
+
+cat > /tmp/ui-harness-smoke.mjs <<'JS'
+const { chromium } = require('playwright');
+const path = require('path');
+const url = 'file://' + path.resolve(process.argv[2]);
+const out = process.argv[3] || 'harness-screenshot.png';
+
+(async () => {
+  const browser = await chromium.launch({ headless: true });
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const errors = [];
+  page.on('pageerror', e => errors.push(`pageerror: ${e.message}`));
+  page.on('console', m => { if (m.type() === 'error') errors.push(`console: ${m.text()}`); });
+  page.on('requestfailed', r => {
+    if (!r.url().startsWith('file://')) errors.push(`req failed: ${r.url()}`);
+  });
+
+  try {
+    await page.goto(url, { timeout: 10000 });
+    await page.waitForTimeout(1500);
+    await page.screenshot({ path: out, fullPage: true });
+  } catch (e) {
+    errors.push(`navigation: ${e.message}`);
+  }
+  await browser.close();
+
+  if (errors.length) {
+    console.error('❌ runtime errors:');
+    errors.forEach(e => console.error('  ' + e));
+    process.exit(1);
+  }
+  console.log(`  ✓ no console errors · screenshot → ${out}`);
+})();
+JS
+
+node /tmp/ui-harness-smoke.mjs "$PROTO" "harness-screenshot.png"
+
+echo ""
+echo "✅ ui harness all green · Read harness-screenshot.png to see the rendered prototype"

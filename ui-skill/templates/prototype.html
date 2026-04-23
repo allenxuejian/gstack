@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- 不加 title · Claude Design 原文"克制加标题卡的冲动" -->
+  <style>
+    html, body { margin: 0; padding: 0; background: #fafaf7; }
+    body { font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif; }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- CRITICAL: pinned versions + integrity · 来自 Claude Design 原文 · 不可修改 -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js"
+          integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L"
+          crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js"
+          integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm"
+          crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js"
+          integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y"
+          crossorigin="anonymous"></script>
+
+  <!-- Tweaks defaults (可选 · 用户要暴露可调旋钮时取消注释) -->
+  <!--
+  <script>
+    window.TWEAKS = /*EDITMODE-BEGIN*/{
+      "primaryColor": "#D97757",
+      "fontSize": 16,
+      "dark": false
+    }/*EDITMODE-END*/;
+  </script>
+  -->
+
+  <!-- 组件定义 · 长文件可拆到单独 .jsx 按 script src 引入 · 不要用 type="module" -->
+  <script type="text/babel">
+    // ⚠️ 若本原型拆多文件：每个 script 独立作用域 · 末尾必须
+    //   Object.assign(window, { MyComponent, ... });
+    // 才能跨 script 共享组件。
+
+    // ⚠️ style 对象必须按组件命名 · 禁止 `const styles = {}`
+    const variantAStyles = {
+      container: {
+        maxWidth: 480,
+        margin: '0 auto',
+        padding: '48px 24px',
+        background: '#fff',
+        borderRadius: 16,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+      },
+      heading: {
+        fontSize: 28,
+        fontWeight: 600,
+        margin: '0 0 12px',
+        color: '#1a1a1a',
+      },
+    };
+
+    function VariantA({ title = '变体 A · 稳妥版' }) {
+      return (
+        <section data-variant="option-a" style={variantAStyles.container}>
+          <h2 style={variantAStyles.heading}>{title}</h2>
+          <p>按章法走的基础方案。</p>
+        </section>
+      );
+    }
+
+    // ─────────────────────
+    // 变体 B · 新颖交互
+    const variantBStyles = {
+      container: {
+        maxWidth: 480,
+        margin: '24px auto',
+        padding: '48px 24px',
+        background: 'oklch(0.97 0.02 80)',
+        borderRadius: 24,
+        border: '2px dashed oklch(0.7 0.15 50)',
+      },
+    };
+
+    function VariantB({ title = '变体 B · 新颖交互' }) {
+      const [clicked, setClicked] = React.useState(false);
+      return (
+        <section
+          data-variant="option-b"
+          style={variantBStyles.container}
+          onClick={() => setClicked(!clicked)}
+        >
+          <h2>{title}</h2>
+          <p>{clicked ? '✨ 已触发' : '点我探索'}</p>
+        </section>
+      );
+    }
+
+    // ─────────────────────
+    // 变体 C · 布局差异
+    const variantCStyles = {
+      grid: {
+        display: 'grid',
+        gridTemplateColumns: '1fr 2fr',
+        gap: 24,
+        maxWidth: 960,
+        margin: '24px auto',
+        padding: 24,
+      },
+    };
+
+    function VariantC({ title = '变体 C · 布局新方式' }) {
+      return (
+        <section data-variant="option-c" style={variantCStyles.grid}>
+          <aside>侧栏信息</aside>
+          <main>
+            <h2>{title}</h2>
+            <p>用网格布局把信息密度拉开。</p>
+          </main>
+        </section>
+      );
+    }
+
+    // ─────────────────────
+    // 主 App
+    function App() {
+      return (
+        <div>
+          <VariantA />
+          <VariantB />
+          <VariantC />
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
